@@ -169,6 +169,54 @@ namespace MicrosoftBot
                 }
                 Console.WriteLine("165: false (user not at least trial mod)");
 
+                if (Warnings.GetPermLevel(member) < (ServerPermLevel)cfgjson.InviteTierRequirement)
+                {
+                    Console.WriteLine("257: true (user does not meet invite tier requirement)");
+                    string inviteExclusion = "microsoft";
+                    if (cfgjson.InviteExclusion != null)
+                    {
+                        Console.WriteLine("261: true (no custom server invite found in config, inviteExclusion: " + inviteExclusion + ")");
+                        inviteExclusion = cfgjson.InviteExclusion;
+                    }
+                    
+                    string checkedMessage = e.Message.Content.Replace($"discord.gg/{inviteExclusion}", "").Replace($"discord.com/invite/{inviteExclusion}", "");
+                    Console.WriteLine("267: checked message: " + checkedMessage);
+                    if (checkedMessage.Contains("discord.gg/") || checkedMessage.Contains("discord.com/invite/"))
+                    {
+                        Console.WriteLine("269: nice (checked message contains invite)");
+                        try
+                        {
+                            e.Message.DeleteAsync();
+                            var embed = new DiscordEmbedBuilder()
+                                .WithDescription(e.Message.Content)
+                                .WithColor(new DiscordColor(0xf03916))
+                                .WithTimestamp(e.Message.Timestamp)
+                                .WithFooter(
+                                    $"User ID: {e.Author.Id}",
+                                    null
+                                )
+                                .WithAuthor(
+                                    $"{e.Author.Username}#{e.Author.Discriminator} in #{e.Channel.Name}",
+                                    null,
+                                    e.Author.AvatarUrl
+                                );
+                            logChannel.SendMessageAsync($"{cfgjson.Emoji.Denied} Deleted infringing message by {e.Author.Mention} in {e.Channel.Mention}:", false, embed);
+
+                        }
+                        catch
+                        {
+                            // still warn anyway
+                            Console.WriteLine("272: exception (embed failed miserably)");
+                        }
+                        string reason = "Sent an invite";
+                        DiscordMessage msg = await e.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {e.Message.Author.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
+                        await Warnings.GiveWarningAsync(e.Message.Author, discord.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), e.Channel);
+                        return;
+                    }
+                    Console.WriteLine("269: not nice (checked message doesn't contain invite)");
+
+                }
+
                 bool match = false;
 
                 var wordListKeys = cfgjson.WordListList.Keys;
@@ -254,53 +302,7 @@ namespace MicrosoftBot
                     return;
                 }
                 Console.WriteLine("222: false (acceptable number of mentions)");
-                if (Warnings.GetPermLevel(member) < (ServerPermLevel)cfgjson.InviteTierRequirement)
-                {
-                    Console.WriteLine("257: true (user does not meet invite tier requirement)");
-                    string inviteExclusion = "microsoft";
-                    if (cfgjson.InviteExclusion != null)
-                    {
-                        Console.WriteLine("261: true (no custom server invite found in config, inviteExclusion: " + inviteExclusion + ")");
-                        inviteExclusion = cfgjson.InviteExclusion;
-                    }
-                    
-                    string checkedMessage = e.Message.Content.Replace($"discord.gg/{inviteExclusion}", "").Replace($"discord.com/invite/{inviteExclusion}", "");
-                    Console.WriteLine("267: checked message: " + checkedMessage);
-                    if (checkedMessage.Contains("discord.gg/") || checkedMessage.Contains("discord.com/invite/"))
-                    {
-                        Console.WriteLine("269: nice (checked message contains invite)");
-                        try
-                        {
-                            e.Message.DeleteAsync();
-                            var embed = new DiscordEmbedBuilder()
-                                .WithDescription(e.Message.Content)
-                                .WithColor(new DiscordColor(0xf03916))
-                                .WithTimestamp(e.Message.Timestamp)
-                                .WithFooter(
-                                    $"User ID: {e.Author.Id}",
-                                    null
-                                )
-                                .WithAuthor(
-                                    $"{e.Author.Username}#{e.Author.Discriminator} in #{e.Channel.Name}",
-                                    null,
-                                    e.Author.AvatarUrl
-                                );
-                            logChannel.SendMessageAsync($"{cfgjson.Emoji.Denied} Deleted infringing message by {e.Author.Mention} in {e.Channel.Mention}:", false, embed);
-
-                        }
-                        catch
-                        {
-                            // still warn anyway
-                            Console.WriteLine("272: exception (embed failed miserably)");
-                        }
-                        string reason = "Sent an invite";
-                        DiscordMessage msg = await e.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {e.Message.Author.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
-                        await Warnings.GiveWarningAsync(e.Message.Author, discord.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), e.Channel);
-                        return;
-                    }
-                    Console.WriteLine("269: not nice (checked message doesn't contain invite)");
-
-                }
+                
                 Console.WriteLine("303: end (no more checks to make)");
             }
             
