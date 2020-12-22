@@ -254,7 +254,7 @@ namespace MicrosoftBot
                     return;
                 }
                 Console.WriteLine("222: false (acceptable number of mentions)");
-                else if (Warnings.GetPermLevel(member) < (ServerPermLevel)cfgjson.InviteTierRequirement)
+                if (Warnings.GetPermLevel(member) < (ServerPermLevel)cfgjson.InviteTierRequirement)
                 {
                     Console.WriteLine("257: true (user does not meet invite tier requirement)");
                     string inviteExclusion = "microsoft";
