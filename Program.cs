@@ -144,23 +144,30 @@ namespace MicrosoftBot
             async Task MessageCreated(DiscordClient client, MessageCreateEventArgs e)
             {
                 if (e.Channel.IsPrivate || e.Guild.Id != cfgjson.ServerID || e.Author.IsBot)
+                {
+                    Console.WriteLine("146: true (message shouldn't be processed)");
                     return;
+                }
+                Console.WriteLine("146: false (message should be processed)");
 
                 if (processedMessages.Contains(e.Message.Id))
                 {
+                    Console.WriteLine("154: true (message already processed)");
                     return;
                 }
                 else
                 {
+                    Console.WriteLine("154: false (message not yet processed, ID: " + e.Message.Id.ToString() + ")");
                     processedMessages.Add(e.Message.Id);
                 }
 
                 DiscordMember member = await e.Guild.GetMemberAsync(e.Author.Id);
                 if (Warnings.GetPermLevel(member) >= ServerPermLevel.TrialMod)
                 {
+                    Console.WriteLine("165: true (user trial mod or higher)");
                     return;
                 }
-
+                Console.WriteLine("165: false (user not at least trial mod)");
 
                 bool match = false;
 
@@ -169,6 +176,7 @@ namespace MicrosoftBot
                 {
                     if (CheckForNaughtyWords(e.Message.Content, cfgjson.WordListList[key]))
                     {
+                        Console.WriteLine("177: true (message contained naughty words)");
                         try
                         {
                             e.Message.DeleteAsync();
@@ -191,6 +199,7 @@ namespace MicrosoftBot
                         catch
                         {
                             // still warn anyway
+                            Console.WriteLine("179: exception (embed failed miserably)");
                         }
 
                         match = true;
@@ -199,15 +208,20 @@ namespace MicrosoftBot
                         Warnings.GiveWarningAsync(e.Message.Author, discord.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), e.Channel);
                         return;
                     }
+                    
+                    Console.WriteLine("177: false (message contained no naughty words)");
                     if (match)
                         return;
                 }
 
                 if (match)
                     return;
+                    
+                Console.WriteLine("213-217: false (no message match)");
 
                 if (e.Message.MentionedUsers.Count >= cfgjson.MassMentionThreshold)
                 {
+                    Console.WriteLine("222: true (too many mentions)");
                     DiscordChannel logChannel = await discord.GetChannelAsync(Program.cfgjson.LogChannel);
                     try
                     {
@@ -231,6 +245,7 @@ namespace MicrosoftBot
                     catch
                     {
                         // still warn anyway
+                        Console.WriteLine("226: exception (embed failed miserably)");
                     }
 
                     string reason = "Mass mentions";
@@ -238,16 +253,22 @@ namespace MicrosoftBot
                     await Warnings.GiveWarningAsync(e.Message.Author, discord.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), e.Channel);
                     return;
                 }
+                Console.WriteLine("222: false (acceptable number of mentions)");
                 else if (Warnings.GetPermLevel(member) < (ServerPermLevel)cfgjson.InviteTierRequirement)
                 {
+                    Console.WriteLine("257: true (user does not meet invite tier requirement)");
                     string inviteExclusion = "microsoft";
                     if (cfgjson.InviteExclusion != null)
+                    {
+                        Console.WriteLine("261: true (no custom server invite found in config, inviteExclusion: " + inviteExclusion + ")");
                         inviteExclusion = cfgjson.InviteExclusion;
-
+                    }
+                    
                     string checkedMessage = e.Message.Content.Replace($"discord.gg/{inviteExclusion}", "").Replace($"discord.com/invite/{inviteExclusion}", "");
-
+                    Console.WriteLine("267: checked message: " + checkedMessage);
                     if (checkedMessage.Contains("discord.gg/") || checkedMessage.Contains("discord.com/invite/"))
                     {
+                        Console.WriteLine("269: nice (checked message contains invite)");
                         try
                         {
                             e.Message.DeleteAsync();
@@ -270,15 +291,19 @@ namespace MicrosoftBot
                         catch
                         {
                             // still warn anyway
+                            Console.WriteLine("272: exception (embed failed miserably)");
                         }
                         string reason = "Sent an invite";
                         DiscordMessage msg = await e.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {e.Message.Author.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
                         await Warnings.GiveWarningAsync(e.Message.Author, discord.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), e.Channel);
                         return;
                     }
+                    Console.WriteLine("269: not nice (checked message doesn't contain invite)");
 
                 }
+                Console.WriteLine("303: end (no more checks to make)");
             }
+            
 
             async Task GuildMemberAdded(DiscordClient client, GuildMemberAddEventArgs e)
             {
