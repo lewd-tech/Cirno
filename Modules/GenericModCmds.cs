@@ -16,12 +16,10 @@ namespace Cliptok.Modules
     {
         private const char dehoistCharacter = '\u17b5';
 
-    public static async Task<bool> BanFromServerAsync(ulong targetUserId, string reason, ulong moderatorId, DiscordGuild guild, int deleteDays = 7, DiscordChannel channel = null, TimeSpan banDuration = default, bool appealable = false)
+        public static async Task<bool> BanFromServerAsync(ulong targetUserId, string reason, ulong moderatorId, DiscordGuild guild, int deleteDays = 7, DiscordChannel channel = null, TimeSpan banDuration = default, bool appealable = false)
         {
-            DiscordUser naughtyUser = await Program.discord.GetUserAsync(targetUserId);
             bool permaBan = false;
             DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
-            DiscordRole mutedRole = guild.GetRole(Program.cfgjson.MutedRole);
             DateTime? expireTime = DateTime.Now + banDuration;
             DiscordMember moderator = await guild.GetMemberAsync(moderatorId);
 
@@ -31,7 +29,7 @@ namespace Cliptok.Modules
                 expireTime = null;
             }
 
-            MemberPunishment newBan = new MemberPunishment()
+            MemberPunishment newBan = new()
             {
                 MemberId = targetUserId,
                 ModId = moderatorId,
@@ -146,44 +144,36 @@ namespace Cliptok.Modules
 
         public static int GetHier(DiscordMember target)
         {
-            return target.IsOwner ? int.MaxValue : (target.Roles.Count() == 0 ? 0 : target.Roles.Max(x => x.Position));
+            return target.IsOwner ? int.MaxValue : (!target.Roles.Any() ? 0 : target.Roles.Max(x => x.Position));
         }
 
         public static TimeSpan ParseTime(char possibleTimePeriod, int timeLength)
         {
-            switch (possibleTimePeriod)
+            return possibleTimePeriod switch
             {
                 // Seconds
-                case 's':
-                    return TimeSpan.FromSeconds(timeLength);
+                's' => TimeSpan.FromSeconds(timeLength),
                 // Minutes
-                case 'm':
-                    return TimeSpan.FromMinutes(timeLength);
+                'm' => TimeSpan.FromMinutes(timeLength),
                 // Hours
-                case 'h':
-                    return TimeSpan.FromHours(timeLength);
+                'h' => TimeSpan.FromHours(timeLength),
                 // Days
-                case 'd':
-                    return TimeSpan.FromDays(timeLength);
+                'd' => TimeSpan.FromDays(timeLength),
                 // Weeks
-                case 'w':
-                    return TimeSpan.FromDays(timeLength * 7);
+                'w' => TimeSpan.FromDays(timeLength * 7),
                 // Months
-                case 'q':
-                    return TimeSpan.FromDays(timeLength * 28);
+                'q' => TimeSpan.FromDays(timeLength * 28),
                 // Years
-                case 'y':
-                    return TimeSpan.FromDays(timeLength * 365);
-                default:
-                    return default;
-            }
+                'y' => TimeSpan.FromDays(timeLength * 365),
+                _ => default,
+            };
         }
 
         [Command("lockdown")]
         [Aliases("lock")]
         [Description("Locks the current channel, preventing any new messages. See also: unlock")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.Mod), RequireBotPermissions(Permissions.ManageChannels)]
-        public async Task LockdownCommand(CommandContext ctx, [RemainingText] string reason = "")
+        public static async Task LockdownCommand(CommandContext ctx, [RemainingText] string reason = "")
         {
             var currentChannel = ctx.Channel;
             if (!Program.cfgjson.LockdownEnabledChannels.Contains(currentChannel.Id))
@@ -207,7 +197,7 @@ namespace Cliptok.Modules
         [Command("unlock")]
         [Description("Unlocks a previously locked channel. See also: lockdown")]
         [Aliases("unlockdown"), HomeServer, RequireHomeserverPerm(ServerPermLevel.Mod), RequireBotPermissions(Permissions.ManageChannels)]
-        public async Task UnlockCommand(CommandContext ctx, [RemainingText] string reason = "")
+        public static async Task UnlockCommand(CommandContext ctx, [RemainingText] string reason = "")
         {
             var currentChannel = ctx.Channel;
             if (!Program.cfgjson.LockdownEnabledChannels.Contains(currentChannel.Id))
@@ -220,7 +210,7 @@ namespace Cliptok.Modules
             var permissions = currentChannel.PermissionOverwrites.ToArray();
             foreach (var permission in permissions)
             {
-                if (permission.Type == DSharpPlus.OverwriteType.Role)
+                if (permission.Type == OverwriteType.Role)
                 {
                     var role = await permission.GetRoleAsync();
                     if (
@@ -286,7 +276,7 @@ namespace Cliptok.Modules
                         reason = "No reason specified.";
                     else
                     {
-                        reason = timeAndReason.Substring(timeAndReason.IndexOf(' ') + 1, timeAndReason.Length - (timeAndReason.IndexOf(' ') + 1));
+                        reason = timeAndReason[(timeAndReason.IndexOf(' ') + 1)..];
                     }
                 }
 
@@ -372,7 +362,7 @@ namespace Cliptok.Modules
                         reason = "No reason specified.";
                     else
                     {
-                        reason = timeAndReason.Substring(timeAndReason.IndexOf(' ') + 1, timeAndReason.Length - (timeAndReason.IndexOf(' ') + 1));
+                        reason = timeAndReason[(timeAndReason.IndexOf(' ') + 1)..];
                     }
                 }
 
@@ -472,8 +462,6 @@ namespace Cliptok.Modules
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.Mod), RequirePermissions(Permissions.BanMembers)]
         public async Task UnmuteCmd(CommandContext ctx, DiscordUser targetUser)
         {
-            DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
-
             if ((await Program.db.HashExistsAsync("bans", targetUser.Id)))
             {
                 await UnbanUserAsync(ctx.Guild, targetUser);
@@ -549,7 +537,7 @@ namespace Cliptok.Modules
                 }
 
             }
-            await msg.ModifyAsync($"{Program.cfgjson.Emoji.Success} Successfully dehoisted {discordMembers.Count() - failedCount} of {discordMembers.Count()} member(s)! (Check Audit Log for details)");
+            await msg.ModifyAsync($"{Program.cfgjson.Emoji.Success} Successfully dehoisted {discordMembers.Length - failedCount} of {discordMembers.Length} member(s)! (Check Audit Log for details)");
         }
 
         public static string DehoistName(string origName)
@@ -794,7 +782,7 @@ namespace Cliptok.Modules
                 bool bans = await CheckBansAsync();
                 bool mutes = await Mutes.CheckMutesAsync(true);
                 bool reminders = await ModCmds.CheckRemindersAsync();
-                await msg.ModifyAsync($"Unban check result: `{bans.ToString()}`\nUnmute check result: `{mutes.ToString()}`\nReminders check result: `{reminders}`");
+                await msg.ModifyAsync($"Unban check result: `{bans}`\nUnmute check result: `{mutes}`\nReminders check result: `{reminders}`");
             }
         }
 

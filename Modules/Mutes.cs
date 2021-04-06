@@ -34,7 +34,7 @@ namespace Cliptok.Modules
                 expireTime = null;
             }
 
-            MemberPunishment newMute = new MemberPunishment()
+            MemberPunishment newMute = new()
             {
                 MemberId = naughtyMember.Id,
                 ModId = moderatorId,
@@ -162,11 +162,12 @@ namespace Cliptok.Modules
                                 var muteRole = guild.GetRole(Program.cfgjson.MutedRole);
                                 await member.GrantRoleAsync(muteRole);
                             }
-                        } catch
+                        }
+                        catch
                         {
                             // nothing
                         }
-                        
+
                     }
                 }
 #if DEBUG
@@ -185,7 +186,6 @@ namespace Cliptok.Modules
         public async Task UnmuteCmd(CommandContext ctx, [Description("The user you're trying to unmute.")] DiscordUser targetUser)
         {
             DiscordGuild guild = ctx.Guild;
-            DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
 
             // todo: store per-guild
             DiscordRole mutedRole = guild.GetRole(Program.cfgjson.MutedRole);
@@ -239,14 +239,14 @@ namespace Cliptok.Modules
             }
 
             await ctx.Message.DeleteAsync();
-
-            TimeSpan muteDuration = default;
             string possibleTime = timeAndReason.Split(' ').First();
             if (possibleTime.Length != 1)
             {
                 string reason = timeAndReason;
                 // Everything BUT the last character should be a number.
                 string possibleNum = possibleTime.Remove(possibleTime.Length - 1);
+
+                TimeSpan muteDuration;
                 if (int.TryParse(possibleNum, out int timeLength))
                 {
                     char possibleTimePeriod = possibleTime.Last();
@@ -263,7 +263,7 @@ namespace Cliptok.Modules
                         reason = "No reason specified.";
                     else
                     {
-                        reason = timeAndReason.Substring(timeAndReason.IndexOf(' ') + 1, timeAndReason.Length - (timeAndReason.IndexOf(' ') + 1));
+                        reason = timeAndReason[(timeAndReason.IndexOf(' ') + 1)..];
                     }
                 }
 
