@@ -1,4 +1,4 @@
-﻿using DSharpPlus;
+using DSharpPlus;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
 using DSharpPlus.Entities;
@@ -316,7 +316,7 @@ namespace Cliptok.Modules
 
         [Command("remindme")]
         [Aliases("reminder", "rember", "wemember")]
-        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Tier4)]
+        [HomeServer]
         public async Task RemindMe(CommandContext ctx, string timetoParse, [RemainingText] string reminder)
         {
             DateTime t = HumanDateParser.HumanDateParser.Parse(timetoParse);
@@ -473,6 +473,7 @@ namespace Cliptok.Modules
             }
 
         }
+
 
         [Group("debug")]
         [Aliases("troubleshoot", "unbug", "bugn't", "helpsomethinghasgoneverywrong")]
