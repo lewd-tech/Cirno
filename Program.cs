@@ -28,6 +28,8 @@ namespace Cliptok
         public static IDatabase db;
         internal static EventId CliptokEventID { get; } = new EventId(1000, "Cliptok");
 
+        public static string[] avatars;
+
         public static string[] badUsernames;
         public static List<ulong> autoBannedUsersCache = new();
         public static DiscordChannel logChannel;
@@ -99,6 +101,8 @@ namespace Cliptok
             else
                 badUsernames = new string[0];
 
+            avatars = File.ReadAllLines("Lists/avatars.txt");
+
             if (Environment.GetEnvironmentVariable("CLIPTOK_TOKEN") != null)
                 token = Environment.GetEnvironmentVariable("CLIPTOK_TOKEN");
             else
@@ -106,7 +110,8 @@ namespace Cliptok
 
             if (Environment.GetEnvironmentVariable("REDIS_URL") != null)
                 redis = ConnectionMultiplexer.Connect(Environment.GetEnvironmentVariable("REDIS_URL"));
-            else {
+            else
+            {
                 string redisHost;
                 if (Environment.GetEnvironmentVariable("REDIS_DOCKER_OVERRIDE") != null)
                     redisHost = "redis";
@@ -216,13 +221,13 @@ namespace Cliptok
                         using var sr = new StreamReader("CommitHash.txt");
                         commitHash = sr.ReadToEnd();
                     }
-                    
+
                     if (Environment.GetEnvironmentVariable("RAILWAY_GIT_COMMIT_SHA") != null)
                     {
                         commitHash = Environment.GetEnvironmentVariable("RAILWAY_GIT_COMMIT_SHA");
                         commitHash = commitHash.Substring(0, Math.Min(commitHash.Length, 7));
                     }
-                    
+
                     if (string.IsNullOrWhiteSpace(commitHash))
                     {
                         commitHash = "dev";
@@ -238,7 +243,7 @@ namespace Cliptok
                     {
                         commitMessage = Environment.GetEnvironmentVariable("RAILWAY_GIT_COMMIT_MESSAGE");
                     }
-                    
+
                     if (string.IsNullOrWhiteSpace(commitMessage))
                     {
                         commitMessage = "N/A (Expected if bot is built for Windows)";
@@ -249,7 +254,7 @@ namespace Cliptok
                         using var sr = new StreamReader("CommitTime.txt");
                         commitTime = sr.ReadToEnd();
                     }
-                    
+
                     if (string.IsNullOrWhiteSpace(commitTime))
                     {
                         commitTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss zzz");
@@ -303,7 +308,7 @@ namespace Cliptok
 
             async Task GuildMemberAdded(DiscordClient client, GuildMemberAddEventArgs e)
             {
-                Task.Run(async() =>
+                Task.Run(async () =>
                 {
                     if (e.Guild.Id != cfgjson.ServerID)
                         return;
@@ -329,7 +334,13 @@ namespace Cliptok
                         DiscordRole mutedRole = e.Guild.GetRole(cfgjson.MutedRole);
                         await e.Member.GrantRoleAsync(mutedRole, "Reapplying mute: possible mute evasion.");
                     }
-                    CheckAndDehoistMemberAsync(e.Member); ;
+                    CheckAndDehoistMemberAsync(e.Member);
+
+                    if (avatars.Contains(e.Member.AvatarHash))
+                    {
+                        var _ = Bans.BanSilently(e.Guild, e.Member.Id, "Secret sauce");
+                        await badMsgLog.SendMessageAsync($"{cfgjson.Emoji.Banned} Raid-banned {e.Member.Mention} for matching avatar: {e.Member.AvatarUrl.Replace("1024", "128")}");
+                    }
                 });
             }
 
@@ -339,7 +350,7 @@ namespace Cliptok
                 {
                     if (e.Guild.Id != cfgjson.ServerID)
                         return;
-                        
+
                     string rolesStr = "None";
 
                     if (e.Member.Roles.Count() != 0)

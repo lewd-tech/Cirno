@@ -6,7 +6,6 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Cliptok.Modules
@@ -95,7 +94,6 @@ namespace Cliptok.Modules
                 await channel.SendMessageAsync(messageToSend);
         }
 
-
         public static async Task UnbanFromServerAsync(DiscordGuild targetGuild, ulong targetUserId)
         {
             DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
@@ -113,14 +111,15 @@ namespace Cliptok.Modules
             //  can be safely removed internally.
             await Program.db.HashDeleteAsync("bans", targetUserId);
         }
-        
+
         public static async Task<bool> BanSilently(DiscordGuild targetGuild, ulong targetUserId, string reason = "Mass ban")
         {
             try
             {
                 await targetGuild.BanMemberAsync(targetUserId, 7, reason);
                 return true;
-            } catch
+            }
+            catch
             {
                 return false;
             }
@@ -129,7 +128,7 @@ namespace Cliptok.Modules
 
         [Command("massban")]
         [Aliases("bigbonk")]
-        [HomeServer,RequireHomeserverPerm(ServerPermLevel.Mod)]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Mod)]
         public async Task MassBanCmd(CommandContext ctx, [RemainingText] string input)
         {
 
@@ -142,7 +141,7 @@ namespace Cliptok.Modules
             }
 
             List<Task<bool>> taskList = new();
-            int successes = 0; 
+            int successes = 0;
 
             var loading = await ctx.RespondAsync("Processing, please wait.");
 
