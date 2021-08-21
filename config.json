@@ -5,62 +5,43 @@
       "c!"
     ]
   },
-  "trialModRole": 352519899048050688,
-  "modRole": 150878439220576256,
-  "adminRole": 286639672606720000,
-  "mutedRole": 426386061220904960,
-  "logChannel": 584908576980729876,
-  "userLogChannel": 870053642500182046,
-  "serverID": 150662382874525696,
-  "homeChannel": 793285213823172628,
-  "investigationsChannel": 745276933767430255,
-  "techSupportChannel": 150909451270881280,
-  "supportLogChannel": 843181924687806484,
-  "communityTechSupportRoleID": 787033266225938472,
-  "modmailUserId": 459322015044730903,
-  "supportRatelimitMinutes": 15,
-  "announcementRoles": {
-    "dev": 434426594271166474,
-    "beta": 643712828217360394,
-    "rp": 288729239921098752,
-    "patch": 445773142233710594
+  "trialModRole": 751545357409845379,
+  "modRole": 747288526974091414,
+  "adminRole": 845899604599242822,
+  "mutedRole": 751545631478120529,
+  "logChannel": 751545758292901898,
+  "userLogChannel": 751545758292901898,
+  "serverID": 228625269101953035,
+  "homeChannel": 511249503857147934,
+  "redis": {
+    "host": "localhost",
+    "port": 6379
   },
-  "appealLink": "https://msft.chat/member/#ban-appeal-process",
-  "warningDaysThreshold": 30,
-  "inviteExclusion": [
-    "microsoft",
-    "xbox",
-    "FjJfTZdtXg",
-    "cMxFErsEDB",
-    "apple",
-    "google",
-    "iphone",
-    "directx",
-    "winadmins",
-    "5W9mr96h4V",
-    "5gFr29XZ"
+  "tierRoles": [
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504,
+    228627322717077504
   ],
+  "warningDaysThreshold": 30,
   "autoMuteThresholds": {
     "2": 6,
     "4": 12,
     "6": 24
   },
-  "massMentionThreshold": 5,
-  "massMentionBanThreshold": 20,
-  "inviteTierRequirement": 2,
-  "tierRoles": [
-    191569917542268928,
-    200719503435235329,
-    221998243079258112,
-    221999663811657730,
-    284782848844627968,
-    398209263962554368,
-    812031728814129202,
-    812031784933261342,
-    812031849517285406,
-    812031871834783814
-  ],
-
+  "investigationsChannel": 511249503857147934,
+  "techSupportChannel": 150909451270881280,
+  "supportLogChannel": 843181924687806484,
+  "communityTechSupportRoleID": 787033266225938472,
+  "modmailUserId": 228574821590499329,
+  "supportRatelimitMinutes": 15,
+  "appealLink": "",
   "emoji": {
     "noPermissions": "<:CliptokShieldUAC:843582723885105202>",
     "warning": "<:CliptokWarning:843582724069392405>",
@@ -87,77 +68,35 @@
     "messageEdit": "<:CliptokEdit:870011211125751888>",
     "clockTime": "<:CliptokClock:848246682156138546>"
   },
-  "redis": {
-    "host": "localhost",
-    "port": 6379
-  },
-  "wordLists": {
-    "scams.txt": {
-      "wholeWord": false,
-      "reason": "Attempted scam message"
-    },
-    "naughtyURLs.txt": {
-      "wholeWord": false,
-      "reason": "Sent malicious URL(s)"
-    },
-    "rudeWords.txt": {
-      "wholeWord": true,
-      "reason": "Use of restricted word(s)"
-    },
-    "autoban.txt": {
-      "wholeWord": false,
-      "reason": "[Automatic] Suspected to be following the patterns of known raiders."
-    },
-    "everyone.txt": {
-      "wholeWord": false,
-      "reason": "Attempted to ping everyone/here"
-    },
-    "malware.txt": {
-      "wholeWord": false,
-      "reason":  "Attempted to send malware"
-    }
-  },
-  "massEmojiThreshold": 6,
+  "inviteExclusion": [
+    "microsoft",
+    "xbox",
+    "FjJfTZdtXg",
+    "cMxFErsEDB",
+    "apple",
+    "google",
+    "iphone",
+    "directx",
+    "winadmins",
+    "5W9mr96h4V"
+  ],
+  "inviteTierRequirement": 0,
+  "wordLists": {},
+  "massEmojiThreshold": 20000,
+  "massMentionBanThreshold": 2000,
+  "massMentionThreshold": 50,
   "unrestrictedEmojiChannels": [
-    150909911952392193,
-    740272437719072808,
-    240528256292356096,
-    812412803104768111
+    1
   ],
   "lockdownEnabledChannels": [
-    150662382874525696,
-    187649467611086849,
+    751534914469363832,
+    318096616819261440,
     150909911952392193,
-    740272437719072808,
-    150909451270881280,
-    616842528712425472,
-    603629077361983518,
-    574650177034387467,
-    470642923483168768,
-    470642923483168768,
-    338055831838916609,
-    786719370990321735,
-    408371098653163521,
-    173743310878277634,
-    341168934386401281,
-    438383036422422529,
-    198170523954446336,
-    522353051353350144,
-    217391455478480896,
-    407431028022575116,
-    428472487941111809,
-    667438432615792653,
-    812191602440798259,
-    812191259539669043
+    692716426544414770
   ],
   "heartosoftId": 413429915187281940,
   "noHeartosoftId": 642508756189446165,
-  "restrictedHeartosoftPhrases": [
-    "heartosoft",
-    "starboard",
-    "413429915187281940",
-    "544153359712649251"
-  ],
+  "restrictedHeartosoftPhrases": [],
   "autoDehoistCharacters": " !\"#$%&'()*+,-./:;<=>?@[\\]^_`'",
   "secondaryAutoDehoistCharacters": "0123456789"
 }

@@ -316,7 +316,7 @@ namespace Cliptok.Modules
 
         [Command("remindme")]
         [Aliases("reminder", "rember", "wemember", "remember")]
-        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Tier4)]
+        [HomeServer]
         public async Task RemindMe(CommandContext ctx, string timetoParse, [RemainingText] string reminder)
         {
             DateTime t = HumanDateParser.HumanDateParser.Parse(timetoParse);
@@ -347,7 +347,7 @@ namespace Cliptok.Modules
 
         [Command("no")]
         [Aliases("yes")]
-        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Tier5)]
+        [HomeServer]
         public async Task No(CommandContext ctx)
         {
             List<string> noResponses = new List<string> {
@@ -512,6 +512,7 @@ namespace Cliptok.Modules
             }
 
         }
+
 
         [Group("debug")]
         [Aliases("troubleshoot", "unbug", "bugn't", "helpsomethinghasgoneverywrong")]
