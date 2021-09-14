@@ -91,12 +91,15 @@ namespace Cliptok.Modules
             if (channel == null)
                 channel = ctx.Channel;
 
+            if (channel == null)
+                channel = await ctx.Client.GetChannelAsync(ctx.Interaction.ChannelId);
+
             var messageBuild = new DiscordMessageBuilder()
                 .WithContent($"{Program.cfgjson.Emoji.Warning} {user.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
 
             var msg = await channel.SendMessageAsync(messageBuild);
 
-            _ = await Warnings.GiveWarningAsync(user, ctx.User, reason, Warnings.MessageLink(msg), ctx.Channel);
+            _ = await Warnings.GiveWarningAsync(user, ctx.User, reason, Warnings.MessageLink(msg), channel);
             webhookOut = new DiscordWebhookBuilder().WithContent($"{Program.cfgjson.Emoji.Success} User was warned successfully in {channel.Mention}\n[Jump to warning]({Warnings.MessageLink(msg)})");
             await ctx.EditResponseAsync(webhookOut);
         }
@@ -138,7 +141,6 @@ namespace Cliptok.Modules
             {
                 // do nothing :/
             }
-
 
             TimeSpan banDuration;
             if (time == null)
@@ -203,7 +205,6 @@ namespace Cliptok.Modules
             webhookOut.Content = $"{Program.cfgjson.Emoji.Success} User was successfully bonked.";
             await ctx.EditResponseAsync(webhookOut);
         }
-
 
         [SlashCommand("warnings", "Fetch the warnings for a user.")]
         public async Task WarningsSlashCommand(InteractionContext ctx,
@@ -287,7 +288,5 @@ namespace Cliptok.Modules
                 }
             }
         }
-
-
     }
 }

@@ -250,8 +250,6 @@ namespace Cliptok.Modules
                 DiscordMember member = await guild.GetMemberAsync(targetUser.Id);
                 await Mutes.MuteUserAsync(member, $"Automatic mute after {warnsSinceThreshold} warnings in the past {Program.cfgjson.WarningDaysThreshold} days.", modUser.Id, guild, channel, TimeSpan.FromHours(toMuteHours));
             }
-
-
             return warning;
         }
 
@@ -523,9 +521,8 @@ namespace Cliptok.Modules
 
         [
             Command("delwarn"),
-            Description("Delete a warning that was issued by mistake or later became invalid.\n" +
-            "You can only delete warnings issued by you, unless you are an Admin/Lead Moderator."),
-            Aliases("delwarm", "delwam"),
+            Description("Delete a warning that was issued by mistake or later became invalid."),
+            Aliases("delwarm", "delwam", "deletewarn"),
             HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialMod)
         ]
         public async Task DelwarnCmd(

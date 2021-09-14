@@ -1,3 +1,4 @@
+using Cliptok.Helpers;
 using Cliptok.Modules;
 using DSharpPlus;
 using DSharpPlus.CommandsNext;
@@ -37,7 +38,7 @@ namespace Cliptok
         public static DiscordChannel badMsgLog;
 
         public static Random rand = new Random();
-
+        public static HasteBinClient hasteUploader;
 
         public static async Task<bool> CheckAndDehoistMemberAsync(DiscordMember targetMember)
         {
@@ -88,6 +89,8 @@ namespace Cliptok
                 json = await sr.ReadToEndAsync();
 
             cfgjson = JsonConvert.DeserializeObject<ConfigJson>(json);
+
+            hasteUploader = new HasteBinClient(cfgjson.HastebinEndpoint);
 
             var keys = cfgjson.WordListList.Keys;
             foreach (string key in keys)
@@ -178,6 +181,8 @@ namespace Cliptok
                     DiscordMessage targetMessage = await e.Channel.GetMessageAsync(e.Message.Id);
 
                     DiscordEmoji noHeartosoft = await e.Guild.GetEmojiAsync(cfgjson.NoHeartosoftId);
+
+                    await Task.Delay(1000);
 
                     if (targetMessage.Author.Id == e.User.Id)
                     {
@@ -272,7 +277,6 @@ namespace Cliptok
                 });
             }
 
-
             async Task UsernameCheckAsync(DiscordMember member)
             {
                 Task.Run(async () =>
@@ -351,6 +355,28 @@ namespace Cliptok
                     if (e.Guild.Id != cfgjson.ServerID)
                         return;
 
+                    var muteRole = e.Guild.GetRole(cfgjson.MutedRole);
+                    var userMute = await db.HashGetAsync("mutes", e.Member.Id);
+
+                    if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole))
+                        db.HashDeleteAsync("mutes", e.Member.Id);
+
+                    if (e.Member.Roles.Contains(muteRole) && userMute.IsNull)
+                    {
+                        MemberPunishment newMute = new()
+                        {
+                            MemberId = e.Member.Id,
+                            ModId = discord.CurrentUser.Id,
+                            ServerId = e.Guild.Id,
+                            ExpireTime = null
+                        };
+
+                        db.HashSetAsync("mutes", e.Member.Id, JsonConvert.SerializeObject(newMute));
+                    }
+
+                    if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole))
+                        db.HashDeleteAsync("mutes", e.Member.Id);
+
                     string rolesStr = "None";
 
                     if (e.Member.Roles.Count() != 0)
@@ -388,20 +414,12 @@ namespace Cliptok
                     var muteRole = e.Guild.GetRole(cfgjson.MutedRole);
                     var userMute = await db.HashGetAsync("mutes", e.Member.Id);
 
-                    if (e.Member.Roles.Contains(muteRole) && userMute.IsNull)
-                    {
-                        MemberPunishment newMute = new()
-                        {
-                            MemberId = e.Member.Id,
-                            ModId = discord.CurrentUser.Id,
-                            ServerId = e.Guild.Id,
-                            ExpireTime = null
-                        };
-
-                        db.HashSetAsync("mutes", e.Member.Id, JsonConvert.SerializeObject(newMute));
-                    }
-
-                    if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole))
+                    // If they're externally unmuted, untrack it?
+                    // But not if they just joined.
+                    var currentTime = DateTime.Now;
+                    var joinTime = e.Member.JoinedAt.DateTime;
+                    var differrence = currentTime.Subtract(joinTime).TotalSeconds;
+                    if (differrence > 10 && !userMute.IsNull && !e.Member.Roles.Contains(muteRole))
                         db.HashDeleteAsync("mutes", e.Member.Id);
 
                     CheckAndDehoistMemberAsync(e.Member);
@@ -515,8 +533,6 @@ namespace Cliptok
             discord.GuildMemberUpdated += GuildMemberUpdated;
             discord.UserUpdated += UserUpdated;
             discord.ClientErrored += ClientError;
-
-
             discord.ThreadCreated += Discord_ThreadCreated;
             discord.ThreadUpdated += Discord_ThreadUpdated;
             discord.ThreadDeleted += Discord_ThreadDeleted;
@@ -551,6 +567,4 @@ namespace Cliptok
 
         }
     }
-
-
 }

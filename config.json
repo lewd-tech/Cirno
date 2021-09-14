@@ -98,5 +98,6 @@
   "noHeartosoftId": 642508756189446165,
   "restrictedHeartosoftPhrases": [],
   "autoDehoistCharacters": " !\"#$%&'()*+,-./:;<=>?@[\\]^_`'",
-  "secondaryAutoDehoistCharacters": "0123456789"
+  "secondaryAutoDehoistCharacters": "0123456789",
+  "hastebinEndpoint": "https://haste.erisa.uk"
 }
