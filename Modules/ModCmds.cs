@@ -79,7 +79,7 @@ namespace Cliptok.Modules
             }
             catch
             {
-                await ctx.Channel.SendMessageAsync($"{ctx.User.Mention}, that user doesn't appear to be in the server.");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That user doesn't appear to be in the server!");
                 return;
             }
 
@@ -419,7 +419,7 @@ namespace Cliptok.Modules
 
         }
 
-        public static long ToUnixTimestamp(DateTime dateTime)
+        public static long ToUnixTimestamp(DateTime? dateTime)
         {
             return ((DateTimeOffset)dateTime).ToUnixTimeSeconds();
         }
@@ -523,7 +523,15 @@ namespace Cliptok.Modules
             [Description("Debug the list of mutes.")]
             public async Task MuteDebug(CommandContext ctx, DiscordUser targetUser = default)
             {
-                await ctx.TriggerTypingAsync();
+                try
+                {
+                    await ctx.TriggerTypingAsync();
+                }
+                catch
+                {
+                    // typing failing is unimportant, move on
+                }
+                
                 string strOut = "";
                 if (targetUser == default)
                 {
@@ -577,7 +585,15 @@ namespace Cliptok.Modules
             [Description("Debug the list of bans.")]
             public async Task BanDebug(CommandContext ctx, DiscordUser targetUser = default)
             {
-                await ctx.TriggerTypingAsync();
+                try
+                {
+                    await ctx.TriggerTypingAsync();
+                }
+                catch
+                {
+                    // typing failing is unimportant, move on
+                }
+
                 string strOut = "";
                 if (targetUser == default)
                 {
@@ -685,6 +701,7 @@ namespace Cliptok.Modules
                 .WithTitle("**__Need Help Or Have a Problem?__**")
                 .WithDescription(
                 $"You're probably looking for <#{Program.cfgjson.TechSupportChannel}>.\n" +
+                $"{Program.cfgjson.Emoji.Windows11} Need help with **Windows 11**? Go to <#894699119195619379>\n\n" +
                 $"Once there, please be sure to provide **plenty of details**, ping the <@&{Program.cfgjson.CommunityTechSupportRoleID}> role, and *be patient!*\n\n" +
                 $"Look under the `🔧 Support` category for the appropriate channel for your issue. See <#413274922413195275> for more info."
                 )
@@ -706,6 +723,16 @@ namespace Cliptok.Modules
             {
                 ctx.Channel.SendMessageAsync(embed);
             }
+        }
+
+        [Command("clipgrant")]
+        [Aliases("grant")]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Mod)]
+        public async Task GrantCommand(CommandContext ctx, DiscordMember member)
+        {
+            var tierOne = ctx.Guild.GetRole(Program.cfgjson.TierRoles[0]);
+            await member.GrantRoleAsync(tierOne);
+            await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} {member.Mention} can now access the server!");
         }
 
     }

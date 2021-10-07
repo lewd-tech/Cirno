@@ -100,6 +100,9 @@ namespace Cliptok
         [JsonProperty("inviteExclusion")]
         public List<string> InviteExclusion { get; private set; }
 
+        [JsonProperty("inviteIDExclusion")]
+        public List<ulong> InviteIDExclusion { get; private set; }
+
         [JsonProperty("inviteTierRequirement")]
         public int InviteTierRequirement { get; private set; }
 
@@ -156,6 +159,13 @@ namespace Cliptok
 
         [JsonProperty("hastebinEndpoint")]
         public string HastebinEndpoint { get; private set; }
+
+        [JsonProperty("modmailCategory")]
+        public ulong ModmailCategory { get; private set; }
+
+        [JsonProperty("autoBanIds")]
+        public List<AutoBanIdSet> AutoBanIds { get; private set; }
+
     }
 
     public class WordListJson
@@ -167,6 +177,21 @@ namespace Cliptok
         public string Reason { get; private set; }
 
         public string[] Words { get; set; }
+
+        [JsonProperty("excludedChannels")]
+        public List<ulong> ExcludedChannels { get; private set; } = new();
+    }
+
+    public class AutoBanIdSet
+    {
+        [JsonProperty("name")]
+        public string Name { get; private set; }
+
+        [JsonProperty("upperBound")]
+        public ulong UpperBound { get; private set; }
+
+        [JsonProperty("lowerBound")]
+        public ulong LowerBound { get; private set; }
     }
 
     public class EmojiJson
@@ -242,6 +267,9 @@ namespace Cliptok
 
         [JsonProperty("clockTime")]
         public string ClockTime { get; set; }
+
+        [JsonProperty("windows11")]
+        public string Windows11 { get; set; }
 
     }
 

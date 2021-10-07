@@ -345,6 +345,25 @@ namespace Cliptok
                         var _ = Bans.BanSilently(e.Guild, e.Member.Id, "Secret sauce");
                         await badMsgLog.SendMessageAsync($"{cfgjson.Emoji.Banned} Raid-banned {e.Member.Mention} for matching avatar: {e.Member.AvatarUrl.Replace("1024", "128")}");
                     }
+
+                    string banDM = $"You have been automatically banned from **{e.Guild.Name}** for matching patterns of known raiders.\n" +
+                            $"Please send an appeal and you will be unbanned as soon as possible: {Program.cfgjson.AppealLink}\n" +
+                            $"The requirements for appeal can be ignored in this case. Sorry for any inconvenience caused.";
+
+                    RedisValue check;
+                    foreach (var IdAutoBanSet in Program.cfgjson.AutoBanIds)
+                    {
+                        check = Program.db.HashGet(IdAutoBanSet.Name, e.Member.Id);
+                        if (e.Member.Id > IdAutoBanSet.LowerBound && e.Member.Id < IdAutoBanSet.UpperBound)
+                        {
+                            await e.Member.SendMessageAsync(banDM);
+
+                            await e.Member.BanAsync(7, "Matching patterns of known raiders, please unban if appealed.");
+
+                            await badMsgLog.SendMessageAsync($"{Program.cfgjson.Emoji.Banned} Automatically appeal-banned {e.Member.Mention} for matching the creation date of the {IdAutoBanSet.Name} DM scam raiders.");
+                        }
+                    }
+
                 });
             }
 
