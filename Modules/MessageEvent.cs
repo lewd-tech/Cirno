@@ -22,6 +22,7 @@ namespace Cliptok.Modules
         static bool CheckForNaughtyWords(string input, WordListJson naughtyWordList)
         {
             string[] naughtyWords = naughtyWordList.Words;
+            input = input.Replace("\0", "");
             if (naughtyWordList.WholeWord)
             {
                 input = input.Replace("\'", " ")
@@ -295,10 +296,8 @@ namespace Cliptok.Modules
                         allowedInviteCodes.Add(code);
                         continue;
                     }
-                    
-                    ulong guildId = invite.Guild.Id;
 
-                    if (!Program.cfgjson.InviteExclusion.Contains(code) && !Program.cfgjson.InviteIDExclusion.Contains(guildId))
+                    if (invite.Channel.Type == ChannelType.Group || (!Program.cfgjson.InviteExclusion.Contains(code) && !Program.cfgjson.InviteIDExclusion.Contains(invite.Guild.Id)))
                     {
                         disallowedInviteCodes.Add(code);
                         string reason = "Sent an unapproved invite";
