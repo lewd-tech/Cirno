@@ -299,6 +299,9 @@ namespace Cliptok.Modules
             [JsonProperty("channelID")]
             public ulong ChannelID { get; set; }
 
+            [JsonProperty("messageID")]
+            public ulong MessageID { get; set; }
+
             [JsonProperty("messageLink")]
             public string MessageLink { get; set; }
 
@@ -314,7 +317,6 @@ namespace Cliptok.Modules
 
         [Command("remindme")]
         [Aliases("reminder", "rember", "wemember", "remember")]
-        [HomeServer]
         public async Task RemindMe(CommandContext ctx, string timetoParse, [RemainingText] string reminder)
         {
             DateTime t = HumanDateParser.HumanDateParser.Parse(timetoParse);
@@ -323,17 +325,26 @@ namespace Cliptok.Modules
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Time can't be in the past!");
                 return;
             }
+#if !DEBUG
             else if (t < (DateTime.Now + TimeSpan.FromSeconds(59)))
             {
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Time must be at least a minute in the future!");
                 return;
             }
+#endif
+            string guildId;
+
+            if (ctx.Channel.IsPrivate)
+                guildId = "@me";
+            else
+                guildId = ctx.Guild.Id.ToString();
 
             var reminderObject = new Reminder()
             {
                 UserID = ctx.User.Id,
                 ChannelID = ctx.Channel.Id,
-                MessageLink = $"https://discord.com/channels/{ctx.Guild.Id}/{ctx.Channel.Id}/{ctx.Message.Id}",
+                MessageID = ctx.Message.Id,
+                MessageLink = $"https://discord.com/channels/{guildId}/{ctx.Channel.Id}/{ctx.Message.Id}",
                 ReminderText = reminder,
                 ReminderTime = t,
                 OriginalTime = DateTime.Now
@@ -429,7 +440,7 @@ namespace Cliptok.Modules
             bool success = false;
             foreach (var reminder in Program.db.ListRange("reminders", 0, -1))
             {
-                var guild = await Program.discord.GetGuildAsync(Program.cfgjson.ServerID);
+                bool DmFallback = false;
                 var reminderObject = JsonConvert.DeserializeObject<Reminder>(reminder);
                 if (reminderObject.ReminderTime <= DateTime.Now)
                 {
@@ -445,14 +456,17 @@ namespace Cliptok.Modules
                     }
                     if (channel == null)
                     {
+                        var guild = await Program.discord.GetGuildAsync(Program.cfgjson.ServerID);
                         var member = await guild.GetMemberAsync(reminderObject.UserID);
+
                         if (Warnings.GetPermLevel(member) >= ServerPermLevel.TrialMod)
                         {
                             channel = await Program.discord.GetChannelAsync(Program.cfgjson.HomeChannel);
                         }
                         else
                         {
-                            channel = await Program.discord.GetChannelAsync(240528256292356096);
+                            channel = await member.CreateDmChannelAsync();
+                            DmFallback = true;
                         }
                     }
 
@@ -474,7 +488,32 @@ namespace Cliptok.Modules
                     )
                     .AddField("Context", $"[`Jump to context`]({reminderObject.MessageLink})", true);
 
-                    await channel.SendMessageAsync($"<@!{reminderObject.UserID}>, you asked to be reminded of something:", embed);
+                    var msg = new DiscordMessageBuilder()
+                        .WithEmbed(embed)
+                        .WithContent($"<@!{reminderObject.UserID}>, you asked to be reminded of something:");
+
+                    if (DmFallback)
+                    {
+                        msg.WithContent("You asked to be reminded of something:");
+                        await channel.SendMessageAsync(msg);
+                    }
+                    else if (reminderObject.MessageID != default)
+                    {
+                        try 
+                        {
+                            msg.WithReply(reminderObject.MessageID, mention: true, failOnInvalidReply: true)
+                                .WithContent("You asked to be reminded of something:");
+                            await channel.SendMessageAsync(msg);
+                        } catch (DSharpPlus.Exceptions.BadRequestException)
+                        {
+                            msg.WithContent($"<@!{reminderObject.UserID}>, you asked to be reminded of something:");
+                            msg.WithReply(null, false, false);
+                            await channel.SendMessageAsync(msg);
+                        }
+                    } else
+                    {
+                        await channel.SendMessageAsync(msg);
+                    }                 
                 }
 
             }
@@ -674,7 +713,7 @@ namespace Cliptok.Modules
             {
                 var msg = await ctx.RespondAsync("Checking for pending unmutes and unbans...");
                 bool bans = await CheckBansAsync();
-                bool mutes = await Mutes.CheckMutesAsync(true);
+                bool mutes = await Mutes.CheckMutesAsync();
                 bool reminders = await ModCmds.CheckRemindersAsync();
                 await msg.ModifyAsync($"Unban check result: `{bans}`\nUnmute check result: `{mutes}`\nReminders check result: `{reminders}`");
             }
@@ -708,6 +747,7 @@ namespace Cliptok.Modules
         }
         
         [Command("ask")]
+        [HomeServer]
         public async Task AskCmd(CommandContext ctx, DiscordUser user = default)
         {
             await ctx.Message.DeleteAsync();
