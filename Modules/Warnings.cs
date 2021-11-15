@@ -40,21 +40,38 @@ namespace Cliptok.Modules
 
         public RequireHomeserverPermAttribute(ServerPermLevel targetlvl, bool workOutside = false)
         {
-            workOutside = workOutside;
+            WorkOutside = workOutside;
             TargetLvl = targetlvl;
         }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
         public override async Task<bool> ExecuteCheckAsync(CommandContext ctx, bool help)
         {
-            if (WorkOutside)
-                return true;
-            else if (ctx.Channel.IsPrivate || ctx.Guild.Id != Program.cfgjson.ServerID)
+            // If the command is supposed to stay within the server and its being used outside, fail silently
+            if (!WorkOutside && (ctx.Channel.IsPrivate || ctx.Guild.Id != Program.cfgjson.ServerID))
                 return false;
 
-            var level = Warnings.GetPermLevel(ctx.Member);
-            if (level >= this.TargetLvl)
+            DiscordMember member;
+            if (ctx.Channel.IsPrivate || ctx.Guild.Id != Program.cfgjson.ServerID)
+            {
+                var guild = await ctx.Client.GetGuildAsync(Program.cfgjson.ServerID);
+                try
+                {
+                    member = await guild.GetMemberAsync(ctx.User.Id);
+                }
+                catch (DSharpPlus.Exceptions.NotFoundException)
+                {
+                    return false;
+                }
+            } else
+            {
+                member = ctx.Member;
+            }
+
+            var level = Warnings.GetPermLevel(member);
+            if (level >= TargetLvl)
                 return true;
+
             else if (!help && ctx.Command.QualifiedName != "edit")
             {
                 var levelText = level.ToString();
@@ -225,36 +242,66 @@ namespace Cliptok.Modules
                 x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
             );
 
-            // Realistically this wouldn't ever be 0, but we'll set it below.
-            int warnsSinceThreshold = 0;
-            foreach (KeyValuePair<string, UserWarning> entry in warningsOutput)
-            {
-                UserWarning entryWarning = entry.Value;
-                TimeSpan span = DateTime.Now - entryWarning.WarnTimestamp;
-                if (span.Days <= Program.cfgjson.WarningDaysThreshold)
-                    warnsSinceThreshold += 1;
-            }
+            var autoMuteResult = GetHoursToMuteFor(warningDictionary: warningsOutput, timeToCheck: TimeSpan.FromDays(Program.cfgjson.WarningDaysThreshold), autoMuteThresholds: Program.cfgjson.AutoMuteThresholds);
 
-            int toMuteHours = 0;
+            var acceptedThreshold = Program.cfgjson.WarningDaysThreshold;
+            int toMuteHours = autoMuteResult.MuteHours;
+            int warnsSinceThreshold = autoMuteResult.WarnsSinceThreshold;
+            string thresholdSpan = "days";
 
-            var keys = Program.cfgjson.AutoMuteThresholds.Keys.OrderBy(key => Convert.ToUInt64(key));
-            int chosenKey = 0;
-            foreach (string key in keys)
+            var test = Program.cfgjson.RecentWarningsPeriodHours;
+
+            if (toMuteHours != -1 && Program.cfgjson.RecentWarningsPeriodHours != 0)
             {
-                int keyInt = int.Parse(key);
-                if (keyInt <= warnsSinceThreshold && keyInt > chosenKey)
+                var recentAutoMuteResult = GetHoursToMuteFor(warningDictionary: warningsOutput, timeToCheck: TimeSpan.FromHours(Program.cfgjson.RecentWarningsPeriodHours), autoMuteThresholds: Program.cfgjson.RecentWarningsAutoMuteThresholds);
+                if (recentAutoMuteResult.MuteHours == -1 || recentAutoMuteResult.MuteHours >= toMuteHours)
                 {
-                    toMuteHours = Program.cfgjson.AutoMuteThresholds[key];
-                    chosenKey = keyInt;
+                    toMuteHours = recentAutoMuteResult.MuteHours;
+                    warnsSinceThreshold = recentAutoMuteResult.WarnsSinceThreshold;
+                    thresholdSpan = "hours";
+                    acceptedThreshold = Program.cfgjson.RecentWarningsPeriodHours;
                 }
             }
 
             if (toMuteHours > 0)
             {
                 DiscordMember member = await guild.GetMemberAsync(targetUser.Id);
-                await Mutes.MuteUserAsync(member, $"Automatic mute after {warnsSinceThreshold} warnings in the past {Program.cfgjson.WarningDaysThreshold} days.", modUser.Id, guild, channel, TimeSpan.FromHours(toMuteHours));
+                await Mutes.MuteUserAsync(member, $"Automatic mute after {warnsSinceThreshold} warnings in the past {acceptedThreshold} {thresholdSpan}.", modUser.Id, guild, channel, TimeSpan.FromHours(toMuteHours));
+            } else if (toMuteHours <= -1)
+            {
+                DiscordMember member = await guild.GetMemberAsync(targetUser.Id);
+                await Mutes.MuteUserAsync(member, $"Automatic permanent mute after {warnsSinceThreshold} warnings in the past {acceptedThreshold} {thresholdSpan}.", modUser.Id, guild, channel);
             }
             return warning;
+        }
+
+        public static (int MuteHours, int WarnsSinceThreshold) GetHoursToMuteFor(Dictionary<string, UserWarning> warningDictionary, TimeSpan timeToCheck, Dictionary<string, int> autoMuteThresholds)
+        {
+            // Realistically this wouldn't ever be 0, but we'll set it below.
+            int warnsSinceThreshold = 0;
+            foreach (KeyValuePair<string, UserWarning> entry in warningDictionary)
+            {
+                UserWarning entryWarning = entry.Value;
+                TimeSpan span = DateTime.Now - entryWarning.WarnTimestamp;
+                if (span <= timeToCheck)
+                    warnsSinceThreshold += 1;
+            }
+
+            int toMuteHours = 0;
+
+            var keys = autoMuteThresholds.Keys.OrderBy(key => Convert.ToUInt64(key));
+            int chosenKey = 0;
+            foreach (string key in keys)
+            {
+                int keyInt = int.Parse(key);
+                if (keyInt <= warnsSinceThreshold && keyInt > chosenKey)
+                {
+                    toMuteHours = autoMuteThresholds[key];
+                    chosenKey = keyInt;
+                }
+            }
+
+            return (toMuteHours, warnsSinceThreshold);
         }
 
         public static bool EditWarning(DiscordUser targetUser, ulong warnId, DiscordUser modUser, string reason, string contextLink)
@@ -488,12 +535,12 @@ namespace Cliptok.Modules
                 {
                     recentCount += 1;
                 }
-                if (count == 30)
+                if (count == 71)
                 {
                     str += $"+ {keys.Count() - 30} more…";
                     count += 1;
                 }
-                else if (count < 30)
+                else if (count < 70)
                 {
                     var reason = warning.WarnReason.Replace("`", "\\`").Replace("*", "\\*");
                     if (reason.Length > 29)
@@ -506,7 +553,7 @@ namespace Cliptok.Modules
 
             }
 
-            return new DiscordEmbedBuilder()
+            var embed = new DiscordEmbedBuilder()
                 .WithDescription(str)
                 .WithColor(new DiscordColor(0xFEC13D))
                 .WithTimestamp(DateTime.Now)
@@ -518,9 +565,24 @@ namespace Cliptok.Modules
                     $"Warnings for {targetUser.Username}#{targetUser.Discriminator}",
                     null,
                     targetUser.AvatarUrl
-                )
-                .AddField("Last 30 days", recentCount.ToString(), true)
+                );
+
+            if (Program.cfgjson.RecentWarningsPeriodHours != 0)
+            {
+                var hourRecentMatches = keys.Where(key =>
+                {
+                    TimeSpan span = DateTime.Now - warningsOutput[key].WarnTimestamp;
+                    return (span.TotalHours < Program.cfgjson.RecentWarningsPeriodHours);
+                }
+                );
+
+                embed.AddField($"Last {Program.cfgjson.RecentWarningsPeriodHours} hours", hourRecentMatches.Count().ToString(), true);
+            }
+
+            embed.AddField("Last 30 days", recentCount.ToString(), true)
                 .AddField("Total", keys.Count().ToString(), true);
+
+            return embed;
         }
 
         [
