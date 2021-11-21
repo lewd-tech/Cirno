@@ -139,7 +139,7 @@
   "autobanIds": [
   ],
   "lineLimit": 30,
-  "increasedLineLimit": 1000,
+  "increasedLineLimit": 6000,
   "lineLimitTier": 0,
   "lineLimitExcludedChannels": [
     150909911952392193,
