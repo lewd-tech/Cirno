@@ -29,7 +29,6 @@
     228627322717077504,
     228627322717077504
   ],
-  "warningDaysThreshold": 30,
   "inviteIDExclusion": [
     150662382874525696,
     471722331820130324,
@@ -63,7 +62,6 @@
     "8": 24,
     "10": -1
   },
-
   "recentWarningsPeriodHours": 48,
   "recentWarningsAutoMuteThresholds": {
     "2": 3,
@@ -122,7 +120,6 @@
   "massMentionBanThreshold": 2000,
   "massMentionThreshold": 50,
   "unrestrictedEmojiChannels": [
-    1
   ],
   "lockdownEnabledChannels": [
     751534914469363832,
@@ -140,50 +137,11 @@
     "insiderDev": 434426594271166474,
     "insiderBeta": 643712828217360394,
     "insiderRP": 288729239921098752,
+    "insider10RP": 910319453491839069,
     "patchTuesday": 445773142233710594
   },
   "modmailCategory": 536572162450915340,
   "autobanIds": [
-    {
-      "name": "2021-10-15",
-      "lowerBound": 898534000000000000,
-      "upperBound": 898536000000000000
-    },
-    {
-      "name": "2021-10-22",
-      "lowerBound": 898533060000000000,
-      "upperBound": 898537050000000000
-    },
-    {
-      "name": "2021-10-22-2",
-      "lowerBound": 898790000000000000,
-      "upperBound": 898880000000000000
-    },
-    {
-      "name": "2021-10-22-3",
-      "lowerBound": 898100000000000000,
-      "upperBound": 898210000000000000
-    },
-    {
-      "name": "2021-10-22-4",
-      "lowerBound": 897138000000000000,
-      "upperBound": 897148000000000000
-    },
-    {
-      "name": "2021-10-22-5",
-      "lowerBound": 899900000000000000,
-      "upperBound": 899925000000000000
-    },
-    {
-      "name": "2021-10-25",
-      "lowerBound": 902130000000000000,
-      "upperBound": 902170000000000000
-    },
-    {
-      "name": "2021-10-26",
-      "lowerBound": 902670000000000000,
-      "upperBound": 902780000000000000
-    }
   ],
   "lineLimit": 30,
   "increasedLineLimit": 1000,
