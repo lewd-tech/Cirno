@@ -132,7 +132,11 @@ namespace Cliptok
             {
                 Token = token,
                 TokenType = TokenType.Bot,
+#if DEBUG
+                MinimumLogLevel = LogLevel.Debug,
+#else
                 MinimumLogLevel = LogLevel.Information,
+#endif
                 Intents = DiscordIntents.All
             });
 
@@ -360,7 +364,7 @@ namespace Cliptok
                         {
                             return;
                         }
-                        
+
                         if (e.Member.Id > IdAutoBanSet.LowerBound && e.Member.Id < IdAutoBanSet.UpperBound)
                         {
                             await e.Member.SendMessageAsync(banDM);
@@ -369,7 +373,7 @@ namespace Cliptok
 
                             await badMsgLog.SendMessageAsync($"{Program.cfgjson.Emoji.Banned} Automatically appeal-banned {e.Member.Mention} for matching the creation date of the {IdAutoBanSet.Name} DM scam raiders.");
                         }
-                        
+
                         Program.db.HashSet(IdAutoBanSet.Name, e.Member.Id, true);
                     }
 
@@ -556,6 +560,12 @@ namespace Cliptok
                 return Task.CompletedTask;
             }
 
+            Task Discord_SocketErrored(DiscordClient client, SocketErrorEventArgs e)
+            {
+                client.Logger.LogError(eventId: CliptokEventID, e.Exception, "A socket error ocurred!");
+                return Task.CompletedTask;
+            }
+
             discord.Ready += OnReady;
             discord.MessageCreated += MessageCreated;
             discord.MessageUpdated += MessageUpdated;
@@ -565,6 +575,8 @@ namespace Cliptok
             discord.GuildMemberUpdated += GuildMemberUpdated;
             discord.UserUpdated += UserUpdated;
             discord.ClientErrored += ClientError;
+            discord.SocketErrored += Discord_SocketErrored;
+
             discord.ThreadCreated += Discord_ThreadCreated;
             discord.ThreadUpdated += Discord_ThreadUpdated;
             discord.ThreadDeleted += Discord_ThreadDeleted;
@@ -575,7 +587,7 @@ namespace Cliptok
             commands = discord.UseCommandsNext(new CommandsNextConfiguration
             {
                 StringPrefixes = cfgjson.Core.Prefixes
-            }); ;
+            });
 
             commands.RegisterCommands<Warnings>();
             commands.RegisterCommands<MuteCmds>();
@@ -598,7 +610,7 @@ namespace Cliptok
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e.Message);
+                    discord.Logger.LogError(CliptokEventID, e.ToString());
                 }
             }
 

@@ -63,7 +63,8 @@ namespace Cliptok.Modules
                 {
                     return false;
                 }
-            } else
+            }
+            else
             {
                 member = ctx.Member;
             }
@@ -172,9 +173,13 @@ namespace Cliptok.Modules
             if (userID == default)
                 userID = warning.TargetUserId;
 
+            string reason = warning.WarnReason;
+            if (string.IsNullOrWhiteSpace(reason))
+                reason = "No reason provided.";
+
             DiscordUser targetUser = await Program.discord.GetUserAsync(userID);
             DiscordEmbedBuilder embed = new DiscordEmbedBuilder()
-            .WithDescription($"**Reason**\n{warning.WarnReason}")
+            .WithDescription($"**Reason**\n{reason}")
             .WithColor(new DiscordColor(colour))
             .WithTimestamp(DateTime.Now)
             .WithFooter(
@@ -201,17 +206,7 @@ namespace Cliptok.Modules
         public static async Task<UserWarning> GiveWarningAsync(DiscordUser targetUser, DiscordUser modUser, string reason, string contextLink, DiscordChannel channel, string extraWord = " ")
         {
             DiscordGuild guild = channel.Guild;
-            ulong warningId = (ulong)Program.db.StringGet("totalWarnings");
-            // TODO: fix this hell
-            if (warningId == 0)
-            {
-                Program.db.StringSet("totalWarnings", "1");
-                warningId = 1;
-            }
-            else
-            {
-                warningId += 1;
-            }
+            ulong warningId = (ulong)Program.db.StringIncrement("totalWarnings");
 
             UserWarning warning = new()
             {
@@ -222,7 +217,7 @@ namespace Cliptok.Modules
                 WarningId = warningId,
                 ContextLink = contextLink
             };
-            Program.db.StringSet("totalWarnings", warningId);
+
             Program.db.HashSet(targetUser.Id.ToString(), warning.WarningId, JsonConvert.SerializeObject(warning));
             try
             {
@@ -249,8 +244,6 @@ namespace Cliptok.Modules
             int warnsSinceThreshold = autoMuteResult.WarnsSinceThreshold;
             string thresholdSpan = "days";
 
-            var test = Program.cfgjson.RecentWarningsPeriodHours;
-
             if (toMuteHours != -1 && Program.cfgjson.RecentWarningsPeriodHours != 0)
             {
                 var recentAutoMuteResult = GetHoursToMuteFor(warningDictionary: warningsOutput, timeToCheck: TimeSpan.FromHours(Program.cfgjson.RecentWarningsPeriodHours), autoMuteThresholds: Program.cfgjson.RecentWarningsAutoMuteThresholds);
@@ -266,7 +259,8 @@ namespace Cliptok.Modules
             if (toMuteHours > 0)
             {
                 await Mutes.MuteUserAsync(targetUser, $"Automatic mute after {warnsSinceThreshold} warnings in the past {acceptedThreshold} {thresholdSpan}.", modUser.Id, guild, channel, TimeSpan.FromHours(toMuteHours));
-            } else if (toMuteHours <= -1)
+            }
+            else if (toMuteHours <= -1)
             {
                 await Mutes.MuteUserAsync(targetUser, $"Automatic permanent mute after {warnsSinceThreshold} warnings in the past {acceptedThreshold} {thresholdSpan}.", modUser.Id, guild, channel);
             }
@@ -302,7 +296,7 @@ namespace Cliptok.Modules
             return (toMuteHours, warnsSinceThreshold);
         }
 
-        public static bool EditWarning(DiscordUser targetUser, ulong warnId, DiscordUser modUser, string reason, string contextLink)
+        public static bool EditWarning(DiscordUser targetUser, ulong warnId, DiscordUser modUser, string reason)
         {
 
             if (Program.db.HashExists(targetUser.Id.ToString(), warnId))
@@ -315,7 +309,7 @@ namespace Cliptok.Modules
                     WarnReason = reason,
                     WarnTimestamp = oldWarn.WarnTimestamp,
                     WarningId = warnId,
-                    ContextLink = contextLink
+                    ContextLink = oldWarn.ContextLink
                 };
                 Program.db.HashSet(targetUser.Id.ToString(), warning.WarningId, JsonConvert.SerializeObject(warning));
                 return true;
@@ -540,7 +534,13 @@ namespace Cliptok.Modules
                 }
                 else if (count < 66)
                 {
-                    var reason = warning.WarnReason.Replace("`", "\\`").Replace("*", "\\*");
+                    var reason = warning.WarnReason;
+                    if (string.IsNullOrWhiteSpace(reason))
+                    {
+                        reason = "No reason provided.";
+                    }
+                    reason = reason.Replace("`", "\\`").Replace("*", "\\*");
+
                     if (reason.Length > 29)
                     {
                         reason = Truncate(reason, 29) + "…";
@@ -672,6 +672,12 @@ namespace Cliptok.Modules
             [Description("The ID of the warning you want to edit.")] ulong warnId,
             [RemainingText, Description("The new reason for the warning.")] string newReason)
         {
+            if (string.IsNullOrWhiteSpace(newReason))
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} You haven't given a new reason to set for the warning!");
+                return;
+            }
+
             var msg = await ctx.RespondAsync("Processing your request...");
             var warning = GetWarning(targetUser.Id, warnId);
             if (warning == null)
@@ -682,7 +688,7 @@ namespace Cliptok.Modules
             }
             else
             {
-                EditWarning(targetUser, warnId, ctx.User, newReason, MessageLink(msg));
+                EditWarning(targetUser, warnId, ctx.User, newReason);
                 await msg.ModifyAsync($"{Program.cfgjson.Emoji.Information} Successfully edited warning `{Pad(warnId)}` (belonging to {targetUser.Mention})",
                     await FancyWarnEmbedAsync(GetWarning(targetUser.Id, warnId), userID: targetUser.Id));
                 await Program.logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} Warning edited:" +
@@ -707,7 +713,7 @@ namespace Cliptok.Modules
             var keys = server.Keys();
 
             Dictionary<string, int> counts = new();
-            foreach(var key in keys )
+            foreach (var key in keys)
             {
                 ulong number;
                 if (ulong.TryParse(key.ToString(), out number))
