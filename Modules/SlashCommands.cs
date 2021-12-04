@@ -1,7 +1,9 @@
 using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.SlashCommands;
+using Newtonsoft.Json;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Cliptok.Modules
@@ -59,7 +61,7 @@ namespace Cliptok.Modules
     {
 
         [SlashCommand("warn", "Formally warn a user, usually for breaking the server rules.")]
-        [SlashRequireHomeserverPerm(ServerPermLevel.TrialMod)]
+        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
         public async Task WarnSlashCommand(InteractionContext ctx,
              [Option("user", "The user to warn.")] DiscordUser user,
              [Option("reason", "The reason they're being warned.")] string reason,
@@ -78,7 +80,7 @@ namespace Cliptok.Modules
             try
             {
                 targetMember = await ctx.Guild.GetMemberAsync(user.Id);
-                if (Warnings.GetPermLevel(ctx.Member) == ServerPermLevel.TrialMod && (Warnings.GetPermLevel(targetMember) >= ServerPermLevel.TrialMod || targetMember.IsBot))
+                if (Warnings.GetPermLevel(ctx.Member) == ServerPermLevel.TrialModerator && (Warnings.GetPermLevel(targetMember) >= ServerPermLevel.TrialModerator || targetMember.IsBot))
                 {
                     webhookOut = new DiscordWebhookBuilder().WithContent($"{Program.cfgjson.Emoji.Error} As a Trial Moderator you cannot perform moderation actions on other staff members or bots.");
                     await ctx.EditResponseAsync(webhookOut);
@@ -107,7 +109,7 @@ namespace Cliptok.Modules
         }
 
         [SlashCommand("ban", "Bans a user from the server, either permanently or temporarily.")]
-        [SlashRequireHomeserverPerm(ServerPermLevel.Mod)]
+        [SlashRequireHomeserverPerm(ServerPermLevel.Moderator)]
         public async Task BanSlashCommand(InteractionContext ctx,
                 [Option("user", "The user to ban")] DiscordUser user,
                 [Option("reason", "The reason the user is being banned")] string reason,
@@ -132,7 +134,7 @@ namespace Cliptok.Modules
             try
             {
                 targetMember = await ctx.Guild.GetMemberAsync(user.Id);
-                if (Warnings.GetPermLevel(ctx.Member) == ServerPermLevel.TrialMod && (Warnings.GetPermLevel(targetMember) >= ServerPermLevel.TrialMod || targetMember.IsBot))
+                if (Warnings.GetPermLevel(ctx.Member) == ServerPermLevel.TrialModerator && (Warnings.GetPermLevel(targetMember) >= ServerPermLevel.TrialModerator || targetMember.IsBot))
                 {
                     webhookOut.Content = $"{Program.cfgjson.Emoji.Error} As a Trial Moderator you cannot perform moderation actions on other staff members or bots.";
                     await ctx.EditResponseAsync(webhookOut);
@@ -222,7 +224,7 @@ namespace Cliptok.Modules
         }
 
         [SlashCommand("transfer_warnings", "Transfer warnings from one user to another.")]
-        [SlashRequireHomeserverPerm(ServerPermLevel.Mod)]
+        [SlashRequireHomeserverPerm(ServerPermLevel.Moderator)]
         public async Task TransferWarningsSlashCommand(InteractionContext ctx,
             [Option("source_user", "The user currently holding the warnings.")] DiscordUser sourceUser,
             [Option("target_user", "The user recieving the warnings.")] DiscordUser targetUser,
@@ -304,6 +306,68 @@ namespace Cliptok.Modules
         public async Task ContextWarnings(ContextMenuContext ctx)
         {
             await ctx.RespondAsync(embed: Warnings.GenerateWarningsEmbed(ctx.TargetUser), ephemeral: true);
+        }
+
+        [ContextMenu(ApplicationCommandType.UserContextMenu, "User Information")]
+        public async Task ContextUserInformation(ContextMenuContext ctx)
+        {
+            var target = ctx.TargetUser;
+            DiscordEmbed embed;
+            DiscordMember member = default;
+
+            try
+            {
+                member = await ctx.Guild.GetMemberAsync(target.Id);
+            } catch (DSharpPlus.Exceptions.NotFoundException)
+            {
+                embed = new DiscordEmbedBuilder()
+                    .WithThumbnail(target.AvatarUrl)
+                    .WithTitle($"User information for {target.Username}#{target.Discriminator}")
+                    .AddField("User", target.Mention, true)
+                    .AddField("User ID", target.Id.ToString(), true)
+                    .AddField($"{ctx.Client.CurrentUser.Username} permission level", "N/A (not in server)", true)
+                    .AddField("Roles", "N/A (not in server)", false)
+                    .AddField("Last joined server", "N/A (not in server)", true)
+                    .AddField("Account created", $"<t:{ModCmds.ToUnixTimestamp(target.CreationTimestamp.DateTime)}:F>", true);
+                await ctx.RespondAsync(embed: embed, ephemeral: true);
+                return;
+            }
+
+            string hash = member.GuildAvatarHash;
+
+            var format = hash.StartsWith("a_") ? "gif" : "png";
+
+
+            string avatarUrl;
+            if (member.GuildAvatarHash != target.AvatarHash)
+                avatarUrl = $"https://cdn.discordapp.com/guilds/{ctx.Guild.Id}/users/{target.Id}/avatars/{hash}.{format}?size=256";
+            else
+                avatarUrl = $"https://cdn.discordapp.com/avatars/{target.Id}/{member.AvatarHash}.{format}?size=256";
+
+            string rolesStr = "None";
+
+            if (member.Roles.Count() != 0)
+            {
+                rolesStr = "";
+
+                foreach (DiscordRole role in member.Roles.OrderBy(x => x.Position).Reverse())
+                {
+                    rolesStr += role.Mention + " ";
+                }
+            }
+
+            embed = new DiscordEmbedBuilder()
+                .WithThumbnail(avatarUrl)
+                .WithTitle($"User information for {target.Username}#{target.Discriminator}")
+                .AddField("User", member.Mention, true)
+                .AddField("User ID", member.Id.ToString(), true)
+                .AddField($"{ctx.Client.CurrentUser.Username} permission level", Warnings.GetPermLevel(member).ToString(), false)
+                .AddField("Roles", rolesStr, false)
+                .AddField("Last joined server", $"<t:{ModCmds.ToUnixTimestamp(member.JoinedAt.DateTime)}:F>", true)
+                .AddField("Account created", $"<t:{ModCmds.ToUnixTimestamp(member.CreationTimestamp.DateTime)}:F>", true);
+
+            await ctx.RespondAsync(embed: embed, ephemeral: true);
+
         }
 
         [ContextMenu(ApplicationCommandType.UserContextMenu, "Hug")]
