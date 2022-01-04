@@ -59,7 +59,18 @@ namespace Cliptok.Modules
             {
                 try
                 {
-                    await naughtyMember.GrantRoleAsync(mutedRole, $"[Mute by {moderator.Username}#{moderator.Discriminator}]: {reason}");
+                    string fullReason = $"[Mute by {moderator.Username}#{moderator.Discriminator}]: {reason}";
+                    await naughtyMember.GrantRoleAsync(mutedRole, fullReason);
+                    try
+                    {
+                        await naughtyMember.TimeoutAsync(expireTime + TimeSpan.FromSeconds(10), fullReason);
+                        await naughtyMember.ModifyAsync(x => x.VoiceChannel = null);
+                    }
+                    catch (DSharpPlus.Exceptions.UnauthorizedException)
+                    {
+                        // do literally nothing. who cares?
+                    }
+                    
                 }
                 catch
                 {
@@ -159,6 +170,14 @@ namespace Cliptok.Modules
                 {
                     await logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Error} Attempt to removed Muted role from <@{targetUser.Id}> failed because of a Discord API error!" +
                     $"\nIf the role was removed manually, this error can be disregarded safely.");
+                }
+
+                try
+                {
+                    await member.TimeoutAsync(null);
+                } catch
+                {
+                    // do nothing. not important really...
                 }
                 if (success)
                     await logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} Successfully unmuted <@{targetUser.Id}>!");
