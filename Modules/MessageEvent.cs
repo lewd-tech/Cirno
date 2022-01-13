@@ -204,16 +204,15 @@ namespace Cliptok.Modules
                 bool match = false;
 
                 // Matching word list
-                var wordListKeys = Program.cfgjson.WordListList.Keys;
-                foreach (string key in wordListKeys)
+                foreach (var listItem in Program.cfgjson.WordListList)
                 {
-                    if (Program.cfgjson.WordListList[key].ExcludedChannels.Contains(message.Channel.Id))
+                    if (listItem.ExcludedChannels.Contains(message.Channel.Id))
                     {
                         continue;
                     }
-                    else if (CheckForNaughtyWords(message.Content.ToLower(), Program.cfgjson.WordListList[key]))
+                    else if (CheckForNaughtyWords(message.Content.ToLower(), listItem))
                     {
-                        string reason = Program.cfgjson.WordListList[key].Reason;
+                        string reason = listItem.Reason;
                         try
                         {
                             _ = message.DeleteAsync();
@@ -224,7 +223,7 @@ namespace Cliptok.Modules
                             // still warn anyway
                         }
 
-                        if (key == "autoban.txt" && Warnings.GetPermLevel(member) < ServerPermLevel.Tier4)
+                        if (listItem.Name == "autoban.txt" && Warnings.GetPermLevel(member) < ServerPermLevel.Tier4)
                         {
                             _ = message.DeleteAsync();
                             await Bans.BanFromServerAsync(message.Author.Id, reason, client.CurrentUser.Id, message.Channel.Guild, 0, message.Channel, default, true);
@@ -447,21 +446,32 @@ namespace Cliptok.Modules
                     string reason = "Too many lines in a single message";
                     _ = message.DeleteAsync();
 
+                    var button = new DiscordButtonComponent(ButtonStyle.Secondary, "line-limit-deleted-message-callback", "View message content", false, null);
+
                     if (!Program.db.HashExists("linePardoned", message.Author.Id.ToString()))
                     {
                         await Program.db.HashSetAsync("linePardoned", member.Id.ToString(), false);
-                        var msgOut = await message.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} {message.Author.Mention}, your message was deleted for containing too many lines.\n" +
-                            $"Please consider using a Pastebin-style website or <#{Program.cfgjson.UnrestrictedEmojiChannels[0]}> to avoid further punishment.");
-                        await SendInfringingMessaageAsync(Program.badMsgLog, message, reason, Warnings.MessageLink(msgOut));
+                        string output = $"{Program.cfgjson.Emoji.Information} {message.Author.Mention}, your message was deleted for containing too many lines.\n" +
+                            $"Please consider using a Pastebin-style website or <#{Program.cfgjson.UnrestrictedEmojiChannels[0]}> to avoid further punishment.";
+                        DiscordMessageBuilder messageBuilder = new();
+                        messageBuilder.WithContent(output).AddComponents(button);
+                        DiscordMessage msg = await message.Channel.SendMessageAsync(messageBuilder);
+                        await Program.db.HashSetAsync("deletedMessageReferences", msg.Id, message.Content);
+                        await SendInfringingMessaageAsync(Program.badMsgLog, message, reason, Warnings.MessageLink(msg));
                         return;
                     }
                     else
                     {
                         string output = $"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**\n" +
                             $"Please consider using a Pastebin-style website or <#{Program.cfgjson.UnrestrictedEmojiChannels[0]}> to avoid punishment.";
-                        DiscordMessage msg = await message.Channel.SendMessageAsync(output);
+                        DiscordMessageBuilder messageBuilder = new();
+                        messageBuilder.WithContent(output).AddComponents(button);
+
+                        DiscordMessage msg = await message.Channel.SendMessageAsync(messageBuilder);
                         var warning = await Warnings.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), message.Channel, " automatically ");
+                        await Program.db.HashSetAsync("deletedMessageReferences", msg.Id, message.Content);
                         await SendInfringingMessaageAsync(Program.badMsgLog, message, reason, warning.ContextLink);
+
                         return;
                     }
 
