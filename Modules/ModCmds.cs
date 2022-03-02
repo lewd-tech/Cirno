@@ -11,8 +11,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
+using static Cliptok.Modules.MessageEvent;
 
 namespace Cliptok.Modules
 {
@@ -256,6 +258,7 @@ namespace Cliptok.Modules
         public async static Task<bool> UnbanUserAsync(DiscordGuild guild, DiscordUser target)
         {
             DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
+            await Program.db.HashSetAsync("unbanned", target.Id, true);
             try
             {
                 await guild.UnbanMemberAsync(target);
@@ -720,11 +723,12 @@ namespace Cliptok.Modules
             [Description("Manually run all the automatic actions.")]
             public async Task Refresh(CommandContext ctx)
             {
-                var msg = await ctx.RespondAsync("Checking for pending unmutes and unbans...");
+                var msg = await ctx.RespondAsync("Checking for pending scheduled tasks...");
                 bool bans = await CheckBansAsync();
                 bool mutes = await Mutes.CheckMutesAsync();
                 bool reminders = await ModCmds.CheckRemindersAsync();
-                await msg.ModifyAsync($"Unban check result: `{bans}`\nUnmute check result: `{mutes}`\nReminders check result: `{reminders}`");
+                bool raidmode = await CheckRaidmodeAsync(ctx.Guild.Id);
+                await msg.ModifyAsync($"Unban check result: `{bans}`\nUnmute check result: `{mutes}`\nReminders check result: `{reminders}`\nRaidmode check result: `{raidmode}`");
             }
         }
 
@@ -825,6 +829,160 @@ namespace Cliptok.Modules
             var tierOne = ctx.Guild.GetRole(Program.cfgjson.TierRoles[0]);
             await member.GrantRoleAsync(tierOne);
             await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} {member.Mention} can now access the server!");
+        }
+
+        [Command("scamcheck")]
+        [RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task ScamCheck(CommandContext ctx, [RemainingText] string content)
+        {
+            var urlMatches = MessageEvent.url_rx.Matches(content);
+            if (urlMatches.Count > 0 && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != null && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != "useyourimagination")
+            {
+                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"));
+                request.Headers.Add("User-Agent", "Cliptok (https://github.com/Erisa/Cliptok)");
+                MessageEvent.httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+                var bodyObject = new PhishingRequestBody()
+                {
+                    Message = content
+                };
+
+                request.Content = new StringContent(JsonConvert.SerializeObject(bodyObject), Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response = await httpClient.SendAsync(request);
+                int httpStatusCode = (int)response.StatusCode;
+                var httpStatus = response.StatusCode;
+                string responseText = await response.Content.ReadAsStringAsync();
+
+                if (httpStatus == System.Net.HttpStatusCode.OK)
+                {
+                    var phishingResponse = JsonConvert.DeserializeObject<MessageEvent.PhishingResponseBody>(responseText);
+
+                    if (phishingResponse.Match)
+                    {
+                        foreach (PhishingMatch phishingMatch in phishingResponse.Matches)
+                        {
+                            if (phishingMatch.Domain != "discord.net" && phishingMatch.Type == "PHISHING" && phishingMatch.TrustRating == 1)
+                            {
+                                string responseToSend = $"```json\n{responseText}\n```";
+                                if (responseToSend.Length > 1940)
+                                {
+                                    try
+                                    {
+                                        HasteBinResult hasteURL = await Program.hasteUploader.Post(responseText);
+                                        if (hasteURL.IsSuccess)
+                                            responseToSend = hasteURL.FullUrl + ".json";
+                                        else
+                                            responseToSend = "Response was too big and Hastebin failed, sorry.";
+                                    }
+                                    catch
+                                    {
+                                        responseToSend = "Response was too big and Hastebin failed, sorry.";
+                                    }
+                                }
+
+                                await ctx.RespondAsync(responseToSend);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            await ctx.RespondAsync("No matches found.");
+        }
+
+        [Group("clipraidmode")]
+        [RequireHomeserverPerm(ServerPermLevel.Moderator)]
+        class RaidmodeCommands : BaseCommandModule
+        {
+            [GroupCommand]
+            [Aliases("status")]
+            public async Task RaidmodeStatus(CommandContext ctx)
+            {
+                if (Program.db.HashExists("raidmode", ctx.Guild.Id))
+                {
+                    string output = $"{Program.cfgjson.Emoji.Unbanned} Raidmode is currently **enabled**.";
+                    ulong expirationTimeUnix = (ulong)Program.db.HashGet("raidmode", ctx.Guild.Id);
+                    output += $"\nRaidmode ends <t:{expirationTimeUnix}>";
+                    await ctx.RespondAsync("output");
+                } else
+                {
+                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Banned} Raidmode is currently **disabled**.");
+                }
+            }
+
+            [Command("on")]
+            public async Task RaidmodeOn(CommandContext ctx, string duration = default)
+            {
+                if (Program.db.HashExists("raidmode", ctx.Guild.Id))
+                {
+                    string output = $"{Program.cfgjson.Emoji.Unbanned} Raidmode is already **enabled**.";
+
+                    ulong expirationTimeUnix = (ulong)Program.db.HashGet("raidmode", ctx.Guild.Id);
+                    output += $"\nRaidmode ends <t:{expirationTimeUnix}>";
+                    await ctx.RespondAsync(output);
+                }
+                else
+                {
+                    DateTime parsedExpiration;
+
+                    if (duration == default)
+                        parsedExpiration = DateTime.Now.AddHours(3);
+                    else
+                        parsedExpiration = HumanDateParser.HumanDateParser.Parse(duration);
+
+                    long unixExpiration = ToUnixTimestamp(parsedExpiration);
+                    Program.db.HashSet("raidmode", ctx.Guild.Id, unixExpiration);
+
+                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Raidmode is now **enabled** and will end <t:{unixExpiration}:R>.");
+                    DiscordMessageBuilder response = new DiscordMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Unbanned} Raidmode was **enabled** by {ctx.User.Mention} and ends <t:{unixExpiration}:R>.")
+                        .WithAllowedMentions(Mentions.None);
+                    await Program.logChannel.SendMessageAsync(response);
+                }
+            }
+
+            [Command("off")]
+            public async Task RaidmdodeOff(CommandContext ctx)
+            {
+                if (Program.db.HashExists("raidmode", ctx.Guild.Id))
+                {
+                    long expirationTimeUnix = (long)Program.db.HashGet("raidmode", ctx.Guild.Id);
+                    Program.db.HashDelete("raidmode", ctx.Guild.Id);
+                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Raidmode is now **disabled**.\nIt was supposed to end <t:{expirationTimeUnix}:R>.");
+                    DiscordMessageBuilder response = new DiscordMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Banned} Raidmode was **disabled** by {ctx.User.Mention}.\nIt was supposed to end <t:{expirationTimeUnix}:R>.")
+                        .WithAllowedMentions(Mentions.None);
+                    await Program.logChannel.SendMessageAsync(response);
+                }
+                else
+                {
+                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Raidmode is already **disabled**.");
+                }
+            }
+        }
+
+        public static async Task<bool> CheckRaidmodeAsync(ulong guildId)
+        {
+            if (!Program.db.HashExists("raidmode", guildId))
+            {
+                return false;
+            } else
+            {
+                long unixExpiration = (long)Program.db.HashGet("raidmode", guildId);
+                long currentUnixTime = ToUnixTimestamp(DateTime.Now);
+                if (currentUnixTime >= unixExpiration)
+                {
+                    Program.db.HashDelete("raidmode", guildId);
+                    await Program.logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} Raidmode was **disabled** automatically.");
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+                
         }
 
         [Command("listadd")]

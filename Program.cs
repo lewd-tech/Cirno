@@ -289,6 +289,9 @@ namespace Cliptok
             {
                 Task.Run(async () =>
                 {
+                    if (db.HashExists("unbanned", member.Id))
+                        return;
+
                     foreach (var username in badUsernames)
                     {
                         // emergency failsafe, for newlines and other mistaken entries
@@ -340,6 +343,18 @@ namespace Cliptok
 
                     userLogChannel.SendMessageAsync($"{cfgjson.Emoji.UserJoin} **Member joined the server!** - {e.Member.Id}", builder);
 
+                    if (db.HashExists("raidmode", e.Guild.Id))
+                    {
+                        try
+                        {
+                            await e.Member.SendMessageAsync($"Hi, you tried to join **{e.Guild.Name}** while it was in lockdown and your join was refused.\nPlease try to join again later.");
+                        } catch (DSharpPlus.Exceptions.UnauthorizedException)
+                        {
+                            // welp, their DMs are closed. not my problem.
+                        }
+                        await e.Member.RemoveAsync();
+                    }
+
                     if (await db.HashExistsAsync("mutes", e.Member.Id))
                     {
                         // todo: store per-guild
@@ -350,6 +365,9 @@ namespace Cliptok
                         await e.Member.TimeoutAsync(null, "Removing timeout since member was presumably unmuted while left");
                     }
                     CheckAndDehoistMemberAsync(e.Member);
+
+                    if (db.HashExists("unbanned", e.Member.Id))
+                        return;
 
                     if (avatars.Contains(e.Member.AvatarHash))
                     {
@@ -364,8 +382,7 @@ namespace Cliptok
                     RedisValue check;
                     foreach (var IdAutoBanSet in Program.cfgjson.AutoBanIds)
                     {
-                        check = Program.db.HashGet(IdAutoBanSet.Name, e.Member.Id);
-                        if (check.HasValue == true)
+                        if (db.HashExists(IdAutoBanSet.Name, e.Member.Id))
                         {
                             return;
                         }
@@ -645,6 +662,7 @@ namespace Cliptok
                     Mutes.CheckMutesAsync();
                     ModCmds.CheckBansAsync();
                     ModCmds.CheckRemindersAsync();
+                    ModCmds.CheckRaidmodeAsync(cfgjson.ServerID);
                 }
                 catch (Exception e)
                 {
