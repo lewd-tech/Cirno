@@ -26,7 +26,7 @@ namespace Cliptok.Modules
         public static List<string> allowedInviteCodes = new();
         public static List<string> disallowedInviteCodes = new();
 
-        static public readonly HttpClient httpClient = new HttpClient();
+        static public readonly HttpClient httpClient = new();
 
         static bool CheckForNaughtyWords(string input, WordListJson naughtyWordList)
         {
@@ -60,7 +60,6 @@ namespace Cliptok.Modules
                             if (distinctString.Length == 1)
                             {
                                 isNaughty = true;
-
                             }
                             else if (distinctString.Length == 2 && (naughty.EndsWith(distinctString[1].ToString()) || naughty.StartsWith(distinctString[0].ToString())))
                             {
@@ -86,7 +85,7 @@ namespace Cliptok.Modules
             else if (naughtyWordList.Url)
             {
                 var urlMatches = url_rx.Matches(input);
-                foreach(Match match in urlMatches)
+                foreach (Match match in urlMatches)
                 {
                     if (naughtyWords.Contains(match.Value))
                         return true;
@@ -171,7 +170,7 @@ namespace Cliptok.Modules
             public string Domain { get; set; }
 
             [JsonProperty("source")]
-            public string source { get; set; }
+            public string Source { get; set; }
 
             [JsonProperty("type")]
             public string Type { get; set; }
@@ -184,12 +183,12 @@ namespace Cliptok.Modules
         {
             try
             {
-                if (message.Author == null)
+                if (message.Author == null || message.Author.Id == client.CurrentUser.Id)
                     return;
 
                 if (!isAnEdit && message.Author.Id == Program.cfgjson.ModmailUserId && message.Content == "@here" && message.Embeds[0].Footer.Text.Contains("User ID:"))
                 {
-                    Console.WriteLine($"Processing modmail message {message.Id} in {message.Channel} with {isAnEdit}");
+                    Program.discord.Logger.LogInformation(Program.CliptokEventID, $"Processing modmail message {message.Id} in {message.Channel} with {isAnEdit}");
                     var idString = modmaiL_rx.Match(message.Embeds[0].Footer.Text).Groups[1].Captures[0].Value;
                     DiscordMember modmailMember = default;
                     try
@@ -229,9 +228,10 @@ namespace Cliptok.Modules
                 try
                 {
                     member = await message.Channel.Guild.GetMemberAsync(message.Author.Id);
-                } catch (DSharpPlus.Exceptions.NotFoundException)
+                }
+                catch (DSharpPlus.Exceptions.NotFoundException)
                 {
-                    member = default;   
+                    member = default;
                 }
 
                 // Skip messages from moderators beyond this point.
@@ -463,9 +463,8 @@ namespace Cliptok.Modules
                 var urlMatches = url_rx.Matches(message.Content);
                 if (urlMatches.Count > 0 && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != null && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != "useyourimagination")
                 {
-                    HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"));
+                    HttpRequestMessage request = new(HttpMethod.Post, Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"));
                     request.Headers.Add("User-Agent", "Cliptok (https://github.com/Erisa/Cliptok)");
-                    httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
                     var bodyObject = new PhishingRequestBody()
                     {
@@ -474,7 +473,7 @@ namespace Cliptok.Modules
 
                     request.Content = new StringContent(JsonConvert.SerializeObject(bodyObject), Encoding.UTF8, "application/json");
 
-                    HttpResponseMessage response = await httpClient.SendAsync(request);
+                    HttpResponseMessage response = await Program.httpClient.SendAsync(request);
                     int httpStatusCode = (int)response.StatusCode;
                     var httpStatus = response.StatusCode;
                     string responseText = await response.Content.ReadAsStringAsync();
@@ -482,7 +481,7 @@ namespace Cliptok.Modules
                     if (httpStatus == System.Net.HttpStatusCode.OK)
                     {
                         var phishingResponse = JsonConvert.DeserializeObject<PhishingResponseBody>(responseText);
-                        
+
                         if (phishingResponse.Match)
                         {
                             foreach (PhishingMatch phishingMatch in phishingResponse.Matches)
@@ -493,7 +492,7 @@ namespace Cliptok.Modules
                                     string reason = "Sending phishing URL(s)";
                                     DiscordMessage msg = await message.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
                                     var warning = await Warnings.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextLink: Warnings.MessageLink(msg), message.Channel, " automatically ");
-                                    
+
                                     string responseToSend = $"```json\n{responseText}\n```";
                                     if (responseToSend.Length > 1940)
                                     {
@@ -504,7 +503,8 @@ namespace Cliptok.Modules
                                                 responseToSend = hasteURL.FullUrl + ".json";
                                             else
                                                 responseToSend = "Response was too big and Hastebin failed, sorry.";
-                                        } catch
+                                        }
+                                        catch
                                         {
                                             responseToSend = "Response was too big and Hastebin failed, sorry.";
                                         }
@@ -594,7 +594,7 @@ namespace Cliptok.Modules
             }
             catch (Exception e)
             {
-                client.Logger.LogError(eventId: Program.CliptokEventID, e.ToString());
+                client.Logger.LogError(eventId: Program.CliptokEventID, message: e.ToString());
 
                 var exs = new List<Exception>();
                 if (e is AggregateException ae)

@@ -8,17 +8,59 @@ using DSharpPlus.EventArgs;
 using DSharpPlus.SlashCommands;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using Serilog;
+using Serilog.Expressions;
+using Serilog.Filters;
 using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Web;
+using static Cliptok.Helpers.ShellCommand;
 
 namespace Cliptok
 {
+    // https://stackoverflow.com/a/34944872
+    public class OutputCapture : TextWriter, IDisposable
+    {
+        private TextWriter stdOutWriter;
+        public TextWriter Captured { get; private set; }
+        public override Encoding Encoding { get { return Encoding.ASCII; } }
+
+        public OutputCapture()
+        {
+            this.stdOutWriter = Console.Out;
+            Console.SetOut(this);
+            Captured = new StringWriter();
+        }
+
+        override public void Write(string output)
+        {
+            // Capture the output and also send it to StdOut
+            Captured.Write(output);
+            stdOutWriter.Write(output);
+        }
+
+        override public void WriteLine(string output)
+        {
+            // Capture the output and also send it to StdOut
+            Captured.WriteLine(output);
+            stdOutWriter.WriteLine(output);
+        }
+    }
+    public class AvatarResponseBody
+    {
+        [JsonProperty("matched")]
+        public bool Matched { get; set; }
+    }
+
     class Program : BaseCommandModule
     {
         public static DiscordClient discord;
@@ -36,9 +78,23 @@ namespace Cliptok
         public static DiscordChannel logChannel;
         public static DiscordChannel userLogChannel;
         public static DiscordChannel badMsgLog;
+        public static DiscordGuild homeGuild;
 
         public static Random rand = new Random();
         public static HasteBinClient hasteUploader;
+
+        public static OutputCapture outputCapture;
+
+        static public readonly HttpClient httpClient = new();
+
+        public static void UpdateLists()
+        {
+            foreach (var list in cfgjson.WordListList)
+            {
+                var listOutput = File.ReadAllLines($"Lists/{list.Name}");
+                cfgjson.WordListList[cfgjson.WordListList.FindIndex(a => a.Name == list.Name)].Words = listOutput;
+            }
+        }
 
         public static async Task<bool> CheckAndDehoistMemberAsync(DiscordMember targetMember)
         {
@@ -60,6 +116,7 @@ namespace Cliptok
                 await targetMember.ModifyAsync(a =>
                 {
                     a.Nickname = ModCmds.DehoistName(targetMember.DisplayName);
+                    a.AuditLogReason = "Dehoisted";
                 });
                 return true;
             }
@@ -71,11 +128,28 @@ namespace Cliptok
 
         static void Main(string[] args)
         {
-            MainAsync(args).ConfigureAwait(false).GetAwaiter().GetResult();
+            using (outputCapture = new OutputCapture())
+            {
+                MainAsync(args).ConfigureAwait(false).GetAwaiter().GetResult();
+            }
         }
 
         static async Task MainAsync(string[] _)
         {
+            httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            var logFormat = "[{Timestamp:yyyy-MM-dd HH:mm:ss zzz}] [{Level}] {Message}{NewLine}{Exception}\n";
+            Log.Logger = new LoggerConfiguration()
+#if DEBUG
+                .MinimumLevel.Debug()
+#else
+                .Filter.ByExcluding("Contains(@m, 'Unknown event:')")
+                .MinimumLevel.Information()
+#endif
+                .WriteTo.Console(outputTemplate: logFormat)
+                .CreateLogger();
+
+            var logFactory = new LoggerFactory().AddSerilog();
+
             string token;
             var json = "";
 
@@ -92,11 +166,7 @@ namespace Cliptok
 
             hasteUploader = new HasteBinClient(cfgjson.HastebinEndpoint);
 
-            foreach (var list in cfgjson.WordListList)
-            {
-                var listOutput = File.ReadAllLines($"Lists/{list.Name}");
-                cfgjson.WordListList[cfgjson.WordListList.FindIndex(a => a.Name == list.Name)].Words = listOutput;
-            }
+            UpdateLists();
 
             if (File.Exists("Lists/usernames.txt"))
                 badUsernames = File.ReadAllLines("Lists/usernames.txt");
@@ -122,9 +192,6 @@ namespace Cliptok
                 redis = ConnectionMultiplexer.Connect($"{redisHost}:{cfgjson.Redis.Port}");
             }
 
-            if (Environment.GetEnvironmentVariable("CLIPTOK_GITHUB_TOKEN") == null)
-                Console.Write("GitHub API features disabled due to missing access token.");
-
             db = redis.GetDatabase();
 
             // Migration away from a broken attempt at a key in the past.
@@ -139,8 +206,16 @@ namespace Cliptok
 #else
                 MinimumLogLevel = LogLevel.Information,
 #endif
+                LoggerFactory = logFactory,
                 Intents = DiscordIntents.All
             });
+
+            if (Environment.GetEnvironmentVariable("CLIPTOK_GITHUB_TOKEN") == null || Environment.GetEnvironmentVariable("CLIPTOK_GITHUB_TOKEN") == "githubtokenhere")
+                discord.Logger.LogWarning(CliptokEventID, "GitHub API features disabled due to missing access token.");
+
+            if (Environment.GetEnvironmentVariable("RAVY_API_TOKEN") == null || Environment.GetEnvironmentVariable("RAVY_API_TOKEN") == "goodluckfindingone")
+                discord.Logger.LogWarning(CliptokEventID, "Ravy API features disabled due to missing API token.");
+
 
             var slash = discord.UseSlashCommands();
             slash.SlashCommandErrored += async (s, e) =>
@@ -215,10 +290,12 @@ namespace Cliptok
             {
                 Task.Run(async () =>
                 {
-                    Console.WriteLine($"Logged in as {client.CurrentUser.Username}#{client.CurrentUser.Discriminator}");
+                    client.Logger.LogInformation(CliptokEventID, $"Logged in as {client.CurrentUser.Username}#{client.CurrentUser.Discriminator}");
                     logChannel = await discord.GetChannelAsync(cfgjson.LogChannel);
                     userLogChannel = await discord.GetChannelAsync(cfgjson.UserLogChannel);
                     badMsgLog = await discord.GetChannelAsync(cfgjson.InvestigationsChannelId);
+                    homeGuild = await discord.GetGuildAsync(cfgjson.ServerID);
+
                     Mutes.CheckMutesAsync();
                     ModCmds.CheckBansAsync();
                     ModCmds.CheckRemindersAsync();
@@ -271,12 +348,34 @@ namespace Cliptok
                         commitTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss zzz");
                     }
 
+                    bool listSuccess = false;
+                    if (cfgjson.GitListDirectory != null && cfgjson.GitListDirectory != "")
+                    {
+
+                        ShellResult finishedShell = RunShellCommand($"cd Lists/{cfgjson.GitListDirectory} && git pull");
+
+                        string result = Regex.Replace(finishedShell.result, "ghp_[0-9a-zA-Z]{36}", "ghp_REDACTED").Replace(Environment.GetEnvironmentVariable("CLIPTOK_TOKEN"), "REDACTED");
+
+                        if (finishedShell.proc.ExitCode != 0)
+                        {
+                            listSuccess = false;
+                            client.Logger.LogError(eventId: CliptokEventID, $"Error updating lists:\n{result}");
+                        }
+                        else
+                        {
+                            UpdateLists();
+                            client.Logger.LogInformation(eventId: CliptokEventID, $"Success updating lists:\n{result}");
+                            listSuccess = true;
+                        }
+                    }
+
                     var cliptokChannel = await client.GetChannelAsync(cfgjson.HomeChannel);
                     cliptokChannel.SendMessageAsync($"{cfgjson.Emoji.Connected} {discord.CurrentUser.Username} connected successfully!\n\n" +
                         $"**Version**: `{commitHash.Trim()}`\n" +
                         $"**Version timestamp**: `{commitTime}`\n**Framework**: `{RuntimeInformation.FrameworkDescription}`\n" +
                         $"**Platform**: `{RuntimeInformation.OSDescription}`\n" +
-                        $"**Library**: `DSharpPlus {discord.VersionString}`\n\n" +
+                        $"**Library**: `DSharpPlus {discord.VersionString}`\n" +
+                        $"**List update success**: `{listSuccess}\n\n`" +
                         $"Most recent commit message:\n" +
                         $"```\n" +
                         $"{commitMessage}\n" +
@@ -285,40 +384,41 @@ namespace Cliptok
                 });
             }
 
-            async Task UsernameCheckAsync(DiscordMember member)
+            async Task<bool> UsernameCheckAsync(DiscordMember member)
             {
-                Task.Run(async () =>
+                var guild = Program.homeGuild;
+                if (db.HashExists("unbanned", member.Id))
+                    return false;
+
+                bool result = false;
+
+                foreach (var username in badUsernames)
                 {
-                    if (db.HashExists("unbanned", member.Id))
-                        return;
+                    // emergency failsafe, for newlines and other mistaken entries
+                    if (username.Length < 4)
+                        continue;
 
-                    foreach (var username in badUsernames)
+                    if (member.Username.ToLower().Contains(username.ToLower()))
                     {
-                        // emergency failsafe, for newlines and other mistaken entries
-                        if (username.Length < 4)
-                            continue;
-
-                        if (member.Username.ToLower().Contains(username.ToLower()))
-                        {
-                            if (autoBannedUsersCache.Contains(member.Id))
-                                break;
-                            IEnumerable<ulong> enumerable = autoBannedUsersCache.Append(member.Id);
-                            var guild = await discord.GetGuildAsync(cfgjson.ServerID);
-                            await Bans.BanFromServerAsync(member.Id, "Automatic ban for matching patterns of common bot accounts. Please appeal if you are a human.", discord.CurrentUser.Id, guild, 7, null, default, true);
-                            var embed = new DiscordEmbedBuilder()
-                                .WithTimestamp(DateTime.Now)
-                                .WithFooter($"User ID: {member.Id}", null)
-                                .WithAuthor($"{member.Username}#{member.Discriminator}", null, member.AvatarUrl)
-                                .AddField("Infringing name", member.Username)
-                                .AddField("Matching pattern", username)
-                                .WithColor(new DiscordColor(0xf03916));
-                            var investigations = await discord.GetChannelAsync(cfgjson.InvestigationsChannelId);
-                            await investigations.SendMessageAsync($"{cfgjson.Emoji.Banned} {member.Mention} was banned for matching blocked username patterns.", embed);
+                        if (autoBannedUsersCache.Contains(member.Id))
                             break;
-                        }
+                        IEnumerable<ulong> enumerable = autoBannedUsersCache.Append(member.Id);
+                        await Bans.BanFromServerAsync(member.Id, "Automatic ban for matching patterns of common bot accounts. Please appeal if you are a human.", discord.CurrentUser.Id, guild, 7, null, default, true);
+                        var embed = new DiscordEmbedBuilder()
+                            .WithTimestamp(DateTime.Now)
+                            .WithFooter($"User ID: {member.Id}", null)
+                            .WithAuthor($"{member.Username}#{member.Discriminator}", null, member.AvatarUrl)
+                            .AddField("Infringing name", member.Username)
+                            .AddField("Matching pattern", username)
+                            .WithColor(new DiscordColor(0xf03916));
+                        var investigations = await discord.GetChannelAsync(cfgjson.InvestigationsChannelId);
+                        await investigations.SendMessageAsync($"{cfgjson.Emoji.Banned} {member.Mention} was banned for matching blocked username patterns.", embed);
+                        result = true;
+                        break;
                     }
-                });
+                }
 
+                return result;
             }
 
             async Task GuildMemberAdded(DiscordClient client, GuildMemberAddEventArgs e)
@@ -348,7 +448,8 @@ namespace Cliptok
                         try
                         {
                             await e.Member.SendMessageAsync($"Hi, you tried to join **{e.Guild.Name}** while it was in lockdown and your join was refused.\nPlease try to join again later.");
-                        } catch (DSharpPlus.Exceptions.UnauthorizedException)
+                        }
+                        catch (DSharpPlus.Exceptions.UnauthorizedException)
                         {
                             // welp, their DMs are closed. not my problem.
                         }
@@ -359,8 +460,9 @@ namespace Cliptok
                     {
                         // todo: store per-guild
                         DiscordRole mutedRole = e.Guild.GetRole(cfgjson.MutedRole);
-                        await e.Member.GrantRoleAsync(mutedRole, "Reapplying mute: possible mute evasion.");
-                    } else if (e.Member.CommunicationDisabledUntil != null)
+                        await e.Member.GrantRoleAsync(mutedRole, "Reapplying mute on join: possible mute evasion.");
+                    }
+                    else if (e.Member.CommunicationDisabledUntil != null)
                     {
                         await e.Member.TimeoutAsync(null, "Removing timeout since member was presumably unmuted while left");
                     }
@@ -379,7 +481,6 @@ namespace Cliptok
                             $"Please send an appeal and you will be unbanned as soon as possible: {Program.cfgjson.AppealLink}\n" +
                             $"The requirements for appeal can be ignored in this case. Sorry for any inconvenience caused.";
 
-                    RedisValue check;
                     foreach (var IdAutoBanSet in Program.cfgjson.AutoBanIds)
                     {
                         if (db.HashExists(IdAutoBanSet.Name, e.Member.Id))
@@ -433,7 +534,7 @@ namespace Cliptok
 
                     string rolesStr = "None";
 
-                    if (e.Member.Roles.Count() != 0)
+                    if (e.Member.Roles.Any())
                     {
                         rolesStr = "";
 
@@ -476,18 +577,95 @@ namespace Cliptok
                     if (differrence > 10 && !userMute.IsNull && !e.Member.Roles.Contains(muteRole))
                         db.HashDeleteAsync("mutes", e.Member.Id);
 
+                    bool usernameBanned = await UsernameCheckAsync(e.Member);
+                    if (usernameBanned)
+                        return;
+
                     CheckAndDehoistMemberAsync(e.Member);
-                    UsernameCheckAsync(e.Member);
+                    CheckAvatarsAsync(e.Member);
                 }
                 );
+            }
+
+            async Task<bool> CheckAvatarsAsync(DiscordMember member)
+            {
+                if (Environment.GetEnvironmentVariable("RAVY_API_TOKEN") == null || Environment.GetEnvironmentVariable("RAVY_API_TOKEN") == "goodluckfindingone")
+                    return false;
+
+                string usedHash;
+                string usedUrl;
+
+                if (member.GuildAvatarHash == null && member.AvatarHash == null)
+                    return false;
+
+                // turns out checking guild avatars isnt important
+
+ //               if (member.GuildAvatarHash != null)
+ //               {
+ //                   usedHash = member.GuildAvatarHash;
+ //                   usedUrl = member.GuildAvatarUrl;
+ //               } else
+ //               {
+                    usedHash = member.AvatarHash;
+                    usedUrl = member.GetAvatarUrl(ImageFormat.Png);
+//                }
+
+                if (db.HashGet("safeAvatars", usedHash) == true)
+                {
+                    discord.Logger.LogDebug("Unnecessary avatar check skipped for " + member.Id);
+                    return false;
+                }
+
+                var builder = new UriBuilder("https://ravy.org/api/v1/avatars");
+                var query = HttpUtility.ParseQueryString(builder.Query);
+                query["avatar"] = usedUrl;
+                builder.Query = query.ToString();
+                string url = builder.ToString();
+
+                HttpRequestMessage request = new(HttpMethod.Get, url);
+                request.Headers.Add("User-Agent", "Cliptok (https://github.com/Erisa/Cliptok)");
+                request.Headers.Add("Authorization", Environment.GetEnvironmentVariable("RAVY_API_TOKEN"));
+
+                HttpResponseMessage response = await httpClient.SendAsync(request);
+                int httpStatusCode = (int)response.StatusCode;
+                var httpStatus = response.StatusCode;
+                string responseText = await response.Content.ReadAsStringAsync();
+
+                if (httpStatus == System.Net.HttpStatusCode.OK)
+                {
+                    var avatarResponse = JsonConvert.DeserializeObject<AvatarResponseBody>(responseText);
+                    discord.Logger.LogInformation($"Avatar check for {member.Id}: {httpStatusCode} {responseText}");
+
+                    if (avatarResponse.Matched)
+                    {
+                        var embed = new DiscordEmbedBuilder()
+                            .WithDescription($"API Response:\n```json\n{responseText}\n```")
+                            .WithAuthor($"{member.Username}#{member.Discriminator}", null, usedUrl)
+                            .WithFooter($"User ID: {member.Id}")
+                            .WithImageUrl(await LykosAvatarMethods.UserOrMemberAvatarURL(member, member.Guild, "default", 256));
+
+                        await badMsgLog.SendMessageAsync($"{cfgjson.Emoji.Banned} {member.Mention} has been appeal-banned for an infringing avatar.", embed);
+                        await Bans.BanFromServerAsync(member.Id, "Automatic ban for matching patterns of common bot/compromised accounts. Please appeal if you are human.", discord.CurrentUser.Id, member.Guild, 7, appealable: true);
+                        return true;
+                    }
+                    else if (!avatarResponse.Matched)
+                    {
+                        await db.HashSetAsync("safeAvatars", usedHash, true);
+                        return false;
+                    }
+                } else
+                {
+                    discord.Logger.LogError($"Avatar check for {member.Id}: {httpStatusCode} {responseText}");
+                }
+
+                return false;
             }
 
             async Task UserUpdated(DiscordClient client, UserUpdateEventArgs e)
             {
                 Task.Run(async () =>
                 {
-                    var guild = await client.GetGuildAsync(cfgjson.ServerID);
-                    var member = await guild.GetMemberAsync(e.UserAfter.Id);
+                    var member = await homeGuild.GetMemberAsync(e.UserAfter.Id);
 
                     CheckAndDehoistMemberAsync(member);
                     UsernameCheckAsync(member);
@@ -572,7 +750,7 @@ namespace Cliptok
             Task Discord_ThreadMemberUpdated(DiscordClient client, ThreadMemberUpdateEventArgs e)
             {
                 client.Logger.LogDebug(eventId: CliptokEventID, $"Thread member updated.");
-                Console.WriteLine($"Discord_ThreadMemberUpdated fired for thread {e.ThreadMember.ThreadId}. User ID {e.ThreadMember.Id}.");
+                client.Logger.LogDebug(CliptokEventID, $"Discord_ThreadMemberUpdated fired for thread {e.ThreadMember.ThreadId}. User ID {e.ThreadMember.Id}.");
                 return Task.CompletedTask;
             }
 
@@ -613,12 +791,13 @@ namespace Cliptok
                         webhookOut = new DiscordWebhookBuilder().AddEmbed(embed);
                         await e.Interaction.EditOriginalResponseAsync(webhookOut);
                     }
-                    
-                } else
+
+                }
+                else
                 {
 
                 }
-                
+
             };
 
             discord.Ready += OnReady;
@@ -654,20 +833,28 @@ namespace Cliptok
 
             await discord.ConnectAsync();
 
+            // Only wait 3 seconds before the first set of tasks.
+            await Task.Delay(3000);
             while (true)
             {
-                await Task.Delay(10000);
                 try
                 {
-                    Mutes.CheckMutesAsync();
-                    ModCmds.CheckBansAsync();
-                    ModCmds.CheckRemindersAsync();
-                    ModCmds.CheckRaidmodeAsync(cfgjson.ServerID);
+                    List<Task<bool>> taskList = new();
+                    taskList.Add(Mutes.CheckMutesAsync());
+                    taskList.Add(ModCmds.CheckBansAsync());
+                    taskList.Add(ModCmds.CheckRemindersAsync());
+                    taskList.Add(ModCmds.CheckRaidmodeAsync(cfgjson.ServerID));
+                    taskList.Add(Lockdown.CheckUnlocksAsync());
+
+                    // To prevent a future issue if checks take longer than 10 seconds,
+                    // we only start the 10 second counter after all tasks have concluded.
+                    await Task.WhenAll(taskList);
                 }
                 catch (Exception e)
                 {
-                    discord.Logger.LogError(CliptokEventID, e.ToString());
+                    discord.Logger.LogError(CliptokEventID, message: e.ToString());
                 }
+                await Task.Delay(10000);
             }
 
         }

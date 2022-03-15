@@ -64,13 +64,15 @@ namespace Cliptok.Modules
                     try
                     {
                         await naughtyMember.TimeoutAsync(expireTime + TimeSpan.FromSeconds(10), fullReason);
+
+                        // Remove the member from any Voice Channel they're currently in.
                         await naughtyMember.ModifyAsync(x => x.VoiceChannel = null);
                     }
                     catch (DSharpPlus.Exceptions.UnauthorizedException)
                     {
                         // do literally nothing. who cares?
                     }
-                    
+
                 }
                 catch
                 {
@@ -122,7 +124,7 @@ namespace Cliptok.Modules
             return true;
         }
 
-        public static async Task<bool> UnmuteUserAsync(DiscordUser targetUser)
+        public static async Task<bool> UnmuteUserAsync(DiscordUser targetUser, string reason = "")
         {
             bool success = false;
             DiscordGuild guild = await Program.discord.GetGuildAsync(Program.cfgjson.ServerID);
@@ -149,14 +151,14 @@ namespace Cliptok.Modules
                 // Perhaps we could be catching something specific, but this should do for now.
                 try
                 {
-                    await member.RevokeRoleAsync(mutedRole);
+                    await member.RevokeRoleAsync(role: mutedRole, reason);
                     foreach (var role in member.Roles)
                     {
                         if (role.Name == "Muted" && role.Id != Program.cfgjson.MutedRole)
                         {
                             try
                             {
-                                await member.RevokeRoleAsync(role);
+                                await member.RevokeRoleAsync(role: role, reason: reason);
                             }
                             catch
                             {
@@ -174,8 +176,9 @@ namespace Cliptok.Modules
 
                 try
                 {
-                    await member.TimeoutAsync(null);
-                } catch
+                    await member.TimeoutAsync(until: null, reason: reason);
+                }
+                catch
                 {
                     // do nothing. not important really...
                 }
@@ -192,7 +195,6 @@ namespace Cliptok.Modules
 
         public static async Task<bool> CheckMutesAsync()
         {
-            DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
             Dictionary<string, MemberPunishment> muteList = Program.db.HashGetAll("mutes").ToDictionary(
                 x => x.Name.ToString(),
                 x => JsonConvert.DeserializeObject<MemberPunishment>(x.Value)
@@ -208,7 +210,7 @@ namespace Cliptok.Modules
                     MemberPunishment mute = entry.Value;
                     if (DateTime.Now > mute.ExpireTime)
                     {
-                        await UnmuteUserAsync(await Program.discord.GetUserAsync(mute.MemberId));
+                        await UnmuteUserAsync(await Program.discord.GetUserAsync(mute.MemberId), "Mute has naturally expired.");
                         success = true;
                     }
                 }
@@ -228,6 +230,7 @@ namespace Cliptok.Modules
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
         public async Task UnmuteCmd(CommandContext ctx, [Description("The user you're trying to unmute.")] DiscordUser targetUser)
         {
+            string reason = $"[Manual unmute by {ctx.User.Username}#{ctx.User.Discriminator}";
             DiscordGuild guild = ctx.Guild;
 
             // todo: store per-guild
@@ -245,18 +248,18 @@ namespace Cliptok.Modules
 
             if ((await Program.db.HashExistsAsync("mutes", targetUser.Id)) || (member != default && member.Roles.Contains(mutedRole)))
             {
-                await Mutes.UnmuteUserAsync(targetUser);
+                await Mutes.UnmuteUserAsync(targetUser, reason);
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Information} Successfully unmuted **{targetUser.Username}#{targetUser.Discriminator}**.");
             }
             else
                 try
                 {
-                    await Mutes.UnmuteUserAsync(targetUser);
+                    await Mutes.UnmuteUserAsync(targetUser, reason);
                     await ctx.RespondAsync($"{Program.cfgjson.Emoji.Warning} According to Discord that user is not muted, but I tried to unmute them anyway. Hope it works.");
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e.ToString());
+                    Program.discord.Logger.LogError(e, $"An error ocurred unmuting {targetUser.Id}");
                     await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That user doesn't appear to be muted, *and* an error ocurred while attempting to unmute them anyway. Please contact the bot owner, the error has been logged.");
                 }
         }
