@@ -545,7 +545,7 @@ namespace Cliptok.Modules
         [Command("announce")]
         [Description("Announces something in the current channel, pinging an Insider role in the process.")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator)]
-        public async Task AnnounceCmd(CommandContext ctx, [Description("'dev','beta','rp' or 'patch")] string roleName, [RemainingText, Description("The announcement message to send.")] string announcementMessage)
+        public async Task AnnounceCmd(CommandContext ctx, [Description("'dev','beta','rp', 'rp10, 'patch', 'rpbeta'")] string roleName, [RemainingText, Description("The announcement message to send.")] string announcementMessage)
         {
             DiscordRole discordRole;
 
@@ -563,6 +563,25 @@ namespace Cliptok.Modules
                     // We still need to remember to make it unmentionable even if the msg fails.
                 }
                 await discordRole.ModifyAsync(mentionable: false);
+            } else if (roleName == "rpbeta")
+            {
+                var rpRole = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles["rp"]);
+                var betaRole = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles["beta"]);
+
+                await rpRole.ModifyAsync(mentionable: true);
+                await betaRole.ModifyAsync(mentionable: true);
+
+                try
+                {
+                    await ctx.Message.DeleteAsync();
+                    await ctx.Channel.SendMessageAsync($"{rpRole.Mention} {betaRole.Mention}\n{announcementMessage}");
+                } catch
+                {
+                    // We still need to remember to make it unmentionable even if the msg fails.
+                }
+
+                await rpRole.ModifyAsync(mentionable: false);
+                await betaRole.ModifyAsync(mentionable: false);
             }
             else
             {
@@ -871,6 +890,32 @@ namespace Cliptok.Modules
             await ctx.Message.DeleteAsync();
 
             await msg.ModifyAsync(content);
+        }
+        
+        [Command("editappend")]
+        [Description("Append content to an existing bot messsage with a newline.")]
+        [RequireHomeserverPerm(ServerPermLevel.Moderator)]
+        public async Task EditAppend(
+            CommandContext ctx,
+            [Description("The ID of the message to edit")] ulong messageId,
+            [RemainingText, Description("Content to append on the end of the message.")] string content
+        )
+        {
+            var msg = await ctx.Channel.GetMessageAsync(messageId);
+
+            if (msg == null || msg.Author.Id != ctx.Client.CurrentUser.Id)
+                return;
+
+            var newContent = msg.Content + "\n" + content;
+            if (newContent.Length > 2000)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} New content exceeded 2000 characters.");
+            }
+            else
+            {
+                await ctx.Message.DeleteAsync();
+                await msg.ModifyAsync(newContent);
+            }
         }
 
         [Command("editannounce")]

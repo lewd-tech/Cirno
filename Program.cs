@@ -59,6 +59,9 @@ namespace Cliptok
     {
         [JsonProperty("matched")]
         public bool Matched { get; set; }
+
+        [JsonProperty("key")]
+        public string Key { get; set; }
     }
 
     class Program : BaseCommandModule
@@ -375,7 +378,7 @@ namespace Cliptok
                         $"**Version timestamp**: `{commitTime}`\n**Framework**: `{RuntimeInformation.FrameworkDescription}`\n" +
                         $"**Platform**: `{RuntimeInformation.OSDescription}`\n" +
                         $"**Library**: `DSharpPlus {discord.VersionString}`\n" +
-                        $"**List update success**: `{listSuccess}\n\n`" +
+                        $"**List update success**: `{listSuccess}`\n\n" +
                         $"Most recent commit message:\n" +
                         $"```\n" +
                         $"{commitMessage}\n" +
@@ -523,7 +526,8 @@ namespace Cliptok
                             MemberId = e.Member.Id,
                             ModId = discord.CurrentUser.Id,
                             ServerId = e.Guild.Id,
-                            ExpireTime = null
+                            ExpireTime = null,
+                            ActionTime = DateTime.Now
                         };
 
                         db.HashSetAsync("mutes", e.Member.Id, JsonConvert.SerializeObject(newMute));
@@ -636,7 +640,7 @@ namespace Cliptok
                     var avatarResponse = JsonConvert.DeserializeObject<AvatarResponseBody>(responseText);
                     discord.Logger.LogInformation($"Avatar check for {member.Id}: {httpStatusCode} {responseText}");
 
-                    if (avatarResponse.Matched)
+                    if (avatarResponse.Matched && avatarResponse.Key != "logo")
                     {
                         var embed = new DiscordEmbedBuilder()
                             .WithDescription($"API Response:\n```json\n{responseText}\n```")

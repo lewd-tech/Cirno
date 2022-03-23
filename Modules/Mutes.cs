@@ -24,9 +24,10 @@ namespace Cliptok.Modules
         public static async Task<bool> MuteUserAsync(DiscordUser naughtyUser, string reason, ulong moderatorId, DiscordGuild guild, DiscordChannel channel = null, TimeSpan muteDuration = default, bool alwaysRespond = false)
         {
             bool permaMute = false;
+            DateTime? actionTime = DateTime.Now;
             DiscordChannel logChannel = await Program.discord.GetChannelAsync(Program.cfgjson.LogChannel);
             DiscordRole mutedRole = guild.GetRole(Program.cfgjson.MutedRole);
-            DateTime? expireTime = DateTime.Now + muteDuration;
+            DateTime? expireTime = actionTime + muteDuration;
             DiscordMember moderator = await guild.GetMemberAsync(moderatorId);
 
             DiscordMember naughtyMember = default;
@@ -50,7 +51,9 @@ namespace Cliptok.Modules
                 MemberId = naughtyUser.Id,
                 ModId = moderatorId,
                 ServerId = guild.Id,
-                ExpireTime = expireTime
+                ExpireTime = expireTime,
+                ActionTime = actionTime,
+                Reason = reason
             };
 
             await Program.db.HashSetAsync("mutes", naughtyUser.Id, JsonConvert.SerializeObject(newMute));
@@ -63,7 +66,13 @@ namespace Cliptok.Modules
                     await naughtyMember.GrantRoleAsync(mutedRole, fullReason);
                     try
                     {
-                        await naughtyMember.TimeoutAsync(expireTime + TimeSpan.FromSeconds(10), fullReason);
+                        try
+                        {
+                            await naughtyMember.TimeoutAsync(expireTime + TimeSpan.FromSeconds(10), fullReason);
+                        } catch (Exception e)
+                        {
+                            Program.discord.Logger.LogError(e, "Failed to issue timeout");
+                        }
 
                         // Remove the member from any Voice Channel they're currently in.
                         await naughtyMember.ModifyAsync(x => x.VoiceChannel = null);
@@ -230,7 +239,7 @@ namespace Cliptok.Modules
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
         public async Task UnmuteCmd(CommandContext ctx, [Description("The user you're trying to unmute.")] DiscordUser targetUser)
         {
-            string reason = $"[Manual unmute by {ctx.User.Username}#{ctx.User.Discriminator}";
+            string reason = $"[Manual unmute by {ctx.User.Username}#{ctx.User.Discriminator}]";
             DiscordGuild guild = ctx.Guild;
 
             // todo: store per-guild
