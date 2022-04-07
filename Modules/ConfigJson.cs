@@ -29,7 +29,7 @@ namespace Cliptok
     {
         [JsonProperty("memberId")]
         public ulong MemberId { get; set; }
-        
+
         [JsonProperty("actionTime")]
         public DateTime? ActionTime { get; set; }
 
@@ -41,7 +41,7 @@ namespace Cliptok
 
         [JsonProperty("serverId")]
         public ulong ServerId { get; set; }
-        
+
         [JsonProperty("reason")]
         public string Reason { get; set; }
     }
@@ -206,6 +206,9 @@ namespace Cliptok
 
         [JsonProperty("gitListDirectory")]
         public string GitListDirectory { get; private set; }
+
+        [JsonProperty("feedbackHubChannelId")]
+        public ulong FeedbackHubChannelId { get; private set; }
 
     }
 

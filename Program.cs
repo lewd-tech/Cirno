@@ -9,8 +9,6 @@ using DSharpPlus.SlashCommands;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Serilog;
-using Serilog.Expressions;
-using Serilog.Filters;
 using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
@@ -129,16 +127,10 @@ namespace Cliptok
             }
         }
 
-        static void Main(string[] args)
+        static async Task Main(string[] _)
         {
-            using (outputCapture = new OutputCapture())
-            {
-                MainAsync(args).ConfigureAwait(false).GetAwaiter().GetResult();
-            }
-        }
+            outputCapture = new OutputCapture();
 
-        static async Task MainAsync(string[] _)
-        {
             httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             var logFormat = "[{Timestamp:yyyy-MM-dd HH:mm:ss zzz}] [{Level}] {Message}{NewLine}{Exception}\n";
             Log.Logger = new LoggerConfiguration()
@@ -446,6 +438,13 @@ namespace Cliptok
 
                     userLogChannel.SendMessageAsync($"{cfgjson.Emoji.UserJoin} **Member joined the server!** - {e.Member.Id}", builder);
 
+                    var joinWatchlist = await Program.db.ListRangeAsync("joinWatchedUsers");
+
+                    if (joinWatchlist.Contains(e.Member.Id))
+                    {
+                        badMsgLog.SendMessageAsync($"{cfgjson.Emoji.Warning} Watched user {e.Member.Mention} just joined the server!", builder);
+                    }
+
                     if (db.HashExists("raidmode", e.Guild.Id))
                     {
                         try
@@ -563,6 +562,13 @@ namespace Cliptok
                         .WithFooter($"{client.CurrentUser.Username}LeaveEvent");
 
                     userLogChannel.SendMessageAsync($"{cfgjson.Emoji.UserLeave} **Member left the server!** - {e.Member.Id}", builder);
+
+                    var joinWatchlist = await Program.db.ListRangeAsync("joinWatchedUsers");
+
+                    if (joinWatchlist.Contains(e.Member.Id))
+                    {
+                        badMsgLog.SendMessageAsync($"{cfgjson.Emoji.Warning} Watched user {e.Member.Mention} just left the server!", builder);
+                    }
                 });
             }
 
@@ -604,15 +610,15 @@ namespace Cliptok
 
                 // turns out checking guild avatars isnt important
 
- //               if (member.GuildAvatarHash != null)
- //               {
- //                   usedHash = member.GuildAvatarHash;
- //                   usedUrl = member.GuildAvatarUrl;
- //               } else
- //               {
-                    usedHash = member.AvatarHash;
-                    usedUrl = member.GetAvatarUrl(ImageFormat.Png);
-//                }
+                //               if (member.GuildAvatarHash != null)
+                //               {
+                //                   usedHash = member.GuildAvatarHash;
+                //                   usedUrl = member.GuildAvatarUrl;
+                //               } else
+                //               {
+                usedHash = member.AvatarHash;
+                usedUrl = member.GetAvatarUrl(ImageFormat.Png);
+                //                }
 
                 if (db.HashGet("safeAvatars", usedHash) == true)
                 {
@@ -657,7 +663,8 @@ namespace Cliptok
                         await db.HashSetAsync("safeAvatars", usedHash, true);
                         return false;
                     }
-                } else
+                }
+                else
                 {
                     discord.Logger.LogError($"Avatar check for {member.Id}: {httpStatusCode} {responseText}");
                 }
@@ -729,6 +736,7 @@ namespace Cliptok
 
             Task Discord_ThreadCreated(DiscordClient client, ThreadCreateEventArgs e)
             {
+                e.Thread.JoinThreadAsync();
                 client.Logger.LogDebug(eventId: CliptokEventID, $"Thread created in {e.Guild.Name}. Thread Name: {e.Thread.Name}");
                 return Task.CompletedTask;
             }

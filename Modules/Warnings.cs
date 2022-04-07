@@ -568,20 +568,27 @@ namespace Cliptok.Modules
                     targetUser.AvatarUrl
                 );
 
-            if (Program.cfgjson.RecentWarningsPeriodHours != 0)
+            if (warningsOutput.Count == 0)
+                embed.WithDescription("This user has no warnings on record.");
+            else
             {
-                var hourRecentMatches = keys.Where(key =>
+                if (Program.cfgjson.RecentWarningsPeriodHours != 0)
                 {
-                    TimeSpan span = DateTime.Now - warningsOutput[key].WarnTimestamp;
-                    return (span.TotalHours < Program.cfgjson.RecentWarningsPeriodHours);
-                }
-                );
+                    var hourRecentMatches = keys.Where(key =>
+                    {
+                        TimeSpan span = DateTime.Now - warningsOutput[key].WarnTimestamp;
+                        return (span.TotalHours < Program.cfgjson.RecentWarningsPeriodHours);
+                    }
+                    );
 
-                embed.AddField($"Last {Program.cfgjson.RecentWarningsPeriodHours} hours", hourRecentMatches.Count().ToString(), true);
+                    embed.AddField($"Last {Program.cfgjson.RecentWarningsPeriodHours} hours", hourRecentMatches.Count().ToString(), true);
+
+                    embed.AddField("Last 30 days", recentCount.ToString(), true)
+                        .AddField("Total", keys.Count().ToString(), true);
+                }
+
             }
 
-            embed.AddField("Last 30 days", recentCount.ToString(), true)
-                .AddField("Total", keys.Count().ToString(), true);
 
             return embed;
         }
@@ -643,6 +650,7 @@ namespace Cliptok.Modules
 
         [
             Command("warndetails"),
+            Aliases("warninfo", "waminfo", "wamdetails", "warndetail", "wamdetail"),
             Description("Check the details of a warning in depth. Shows extra information (Such as responsible Mod) that may not be wanted to be public."),
             HomeServer,
             RequireHomeserverPerm(ServerPermLevel.TrialModerator)
@@ -664,6 +672,7 @@ namespace Cliptok.Modules
 
         [
             Command("editwarn"),
+            Aliases("warnedit"),
             Description("Edit the reason of an existing warning.\n" +
                 "The Moderator who is editing the reason will become responsible for the case."),
             HomeServer,

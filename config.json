@@ -50,7 +50,8 @@
     689146493919428623,
     133980319010258944,
     568863120609640463,
-    675491639804035089
+    675491639804035089,
+    114211522384756737
   ],
   "warningDaysThreshold": 30,
   "autoMuteThresholds": {
@@ -151,5 +152,6 @@
     "repo": "Erisa/Cliptok",
     "ref": "main",
     "workflowId": "append-lists-txt.yml"
-  }
+  },
+  "feedbackHubChannelId": 865734819995582464
 }

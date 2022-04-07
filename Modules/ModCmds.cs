@@ -8,7 +8,6 @@ using Newtonsoft.Json;
 using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -545,7 +544,7 @@ namespace Cliptok.Modules
         [Command("announce")]
         [Description("Announces something in the current channel, pinging an Insider role in the process.")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator)]
-        public async Task AnnounceCmd(CommandContext ctx, [Description("'dev','beta','rp', 'rp10, 'patch', 'rpbeta'")] string roleName, [RemainingText, Description("The announcement message to send.")] string announcementMessage)
+        public async Task AnnounceCmd(CommandContext ctx, [Description("'dev','beta','rp', 'rp10, 'patch', 'rpbeta', 'betadev'")] string roleName, [RemainingText, Description("The announcement message to send.")] string announcementMessage)
         {
             DiscordRole discordRole;
 
@@ -563,7 +562,8 @@ namespace Cliptok.Modules
                     // We still need to remember to make it unmentionable even if the msg fails.
                 }
                 await discordRole.ModifyAsync(mentionable: false);
-            } else if (roleName == "rpbeta")
+            }
+            else if (roleName == "rpbeta")
             {
                 var rpRole = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles["rp"]);
                 var betaRole = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles["beta"]);
@@ -575,13 +575,36 @@ namespace Cliptok.Modules
                 {
                     await ctx.Message.DeleteAsync();
                     await ctx.Channel.SendMessageAsync($"{rpRole.Mention} {betaRole.Mention}\n{announcementMessage}");
-                } catch
+                }
+                catch
                 {
                     // We still need to remember to make it unmentionable even if the msg fails.
                 }
 
                 await rpRole.ModifyAsync(mentionable: false);
                 await betaRole.ModifyAsync(mentionable: false);
+            }
+            // this is rushed pending an actual solution
+            else if (roleName == "betadev")
+            {
+                var betaRole = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles["beta"]);
+                var devRole = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles["dev"]);
+
+                await betaRole.ModifyAsync(mentionable: true);
+                await devRole.ModifyAsync(mentionable: true);
+
+                try
+                {
+                    await ctx.Message.DeleteAsync();
+                    await ctx.Channel.SendMessageAsync($"{betaRole.Mention} {devRole.Mention}\n{announcementMessage}");
+                }
+                catch
+                {
+                    // We still need to remember to make it unmentionable even if the msg fails.
+                }
+
+                await betaRole.ModifyAsync(mentionable: false);
+                await devRole.ModifyAsync(mentionable: false);
             }
             else
             {
@@ -805,7 +828,8 @@ namespace Cliptok.Modules
                 try
                 {
                     await ctx.TriggerTypingAsync();
-                } catch
+                }
+                catch
                 {
                     // ignore typing errors
                 }
@@ -891,7 +915,7 @@ namespace Cliptok.Modules
 
             await msg.ModifyAsync(content);
         }
-        
+
         [Command("editappend")]
         [Description("Append content to an existing bot messsage with a newline.")]
         [RequireHomeserverPerm(ServerPermLevel.Moderator)]
@@ -989,7 +1013,7 @@ namespace Cliptok.Modules
 
         [Command("grant")]
         [Description("Grant a user access to the server, by giving them the Tier 1 role.")]
-        [Aliases("clipgrant")]
+        [Aliases("clipgrant", "verify")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
         public async Task GrantCommand(CommandContext ctx, [Description("The member to grant Tier 1 role to.")] DiscordMember member)
         {
@@ -1159,6 +1183,28 @@ namespace Cliptok.Modules
 
         }
 
+        [Command("joinwatch")]
+        [Description("Watch for joins and leaves of a given user. Output goes to #investigations.")]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task JoinWatch(
+            CommandContext ctx,
+            [Description("The user to watch for joins and leaves of.")] DiscordUser user
+        )
+        {
+            var joinWatchlist = await Program.db.ListRangeAsync("joinWatchedUsers");
+
+            if (joinWatchlist.Contains(user.Id))
+            {
+                Program.db.ListRemove("joinWatchedUsers", joinWatchlist.First(x => x == user.Id));
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successfully unwatched {user.Mention}, since they were already in the list.");
+            }
+            else
+            {
+                await Program.db.ListRightPushAsync("joinWatchedUsers", user.Id);
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Now watching for joins/leaves of {user.Mention} to send to {Program.badMsgLog.Mention}!");
+            }
+        }
+
         [Command("listadd")]
         [Description("Add a piece of text to a public list.")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator)]
@@ -1261,3 +1307,10 @@ namespace Cliptok.Modules
 
     }
 }
+
+// oh look,
+// a secret message at the end of a file
+// i wonder what it means
+// how surprising
+// it would be a shame
+// if it ended with nothing special.
