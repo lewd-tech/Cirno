@@ -116,7 +116,6 @@ namespace Cliptok.Modules
                 return false;
         }
     }
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
 
     public class Warnings : BaseCommandModule
     {
@@ -249,11 +248,11 @@ namespace Cliptok.Modules
 
             if (toMuteHours != -1 && Program.cfgjson.RecentWarningsPeriodHours != 0)
             {
-                var recentAutoMuteResult = GetHoursToMuteFor(warningDictionary: warningsOutput, timeToCheck: TimeSpan.FromHours(Program.cfgjson.RecentWarningsPeriodHours), autoMuteThresholds: Program.cfgjson.RecentWarningsAutoMuteThresholds);
-                if (recentAutoMuteResult.MuteHours == -1 || recentAutoMuteResult.MuteHours >= toMuteHours)
+                var (MuteHours, WarnsSinceThreshold) = GetHoursToMuteFor(warningDictionary: warningsOutput, timeToCheck: TimeSpan.FromHours(Program.cfgjson.RecentWarningsPeriodHours), autoMuteThresholds: Program.cfgjson.RecentWarningsAutoMuteThresholds);
+                if (MuteHours == -1 || MuteHours >= toMuteHours)
                 {
-                    toMuteHours = recentAutoMuteResult.MuteHours;
-                    warnsSinceThreshold = recentAutoMuteResult.WarnsSinceThreshold;
+                    toMuteHours = MuteHours;
+                    warnsSinceThreshold = WarnsSinceThreshold;
                     thresholdSpan = "hours";
                     acceptedThreshold = Program.cfgjson.RecentWarningsPeriodHours;
                 }
@@ -343,7 +342,7 @@ namespace Cliptok.Modules
         public static string Truncate(string value, int maxLength, bool elipsis = false)
         {
             if (string.IsNullOrEmpty(value)) return value;
-            var strOut = value.Length <= maxLength ? value : value.Substring(0, maxLength);
+            var strOut = value.Length <= maxLength ? value : value[..maxLength];
             if (elipsis && value.Length > maxLength)
                 return strOut + '…';
             else
@@ -448,8 +447,6 @@ namespace Cliptok.Modules
             if (reply != null)
                 messageBuild.WithReply(reply.Id, true, false);
 
-            var tmp = ctx.Channel.Type;
-
             var msg = await ctx.Channel.SendMessageAsync(messageBuild);
             _ = await GiveWarningAsync(targetUser, ctx.User, reason, MessageLink(msg), ctx.Channel);
         }
@@ -522,38 +519,6 @@ namespace Cliptok.Modules
             int count = 1;
             int recentCount = 0;
 
-            foreach (string key in keys)
-            {
-                UserWarning warning = warningsOutput[key];
-                TimeSpan span = DateTime.Now - warning.WarnTimestamp;
-                if (span.Days < 31)
-                {
-                    recentCount += 1;
-                }
-                if (count == 66)
-                {
-                    str += $"+ {keys.Count() - 65} more…";
-                    count += 1;
-                }
-                else if (count < 66)
-                {
-                    var reason = warning.WarnReason;
-                    if (string.IsNullOrWhiteSpace(reason))
-                    {
-                        reason = "No reason provided.";
-                    }
-                    reason = reason.Replace("`", "\\`").Replace("*", "\\*");
-
-                    if (reason.Length > 29)
-                    {
-                        reason = Truncate(reason, 29) + "…";
-                    }
-                    str += $"`{Pad(warning.WarningId)}` **{reason}** • <t:{ModCmds.ToUnixTimestamp(warning.WarnTimestamp)}:R>\n";
-                    count += 1;
-                }
-
-            }
-
             var embed = new DiscordEmbedBuilder()
                 .WithDescription(str)
                 .WithColor(new DiscordColor(0xFEC13D))
@@ -569,9 +534,42 @@ namespace Cliptok.Modules
                 );
 
             if (warningsOutput.Count == 0)
-                embed.WithDescription("This user has no warnings on record.");
+                embed.WithDescription("This user has no warnings on record.")
+                    .WithColor(color: DiscordColor.DarkGreen);
             else
             {
+                foreach (string key in keys)
+                {
+                    UserWarning warning = warningsOutput[key];
+                    TimeSpan span = DateTime.Now - warning.WarnTimestamp;
+                    if (span.Days < 31)
+                    {
+                        recentCount += 1;
+                    }
+                    if (count == 66)
+                    {
+                        str += $"+ {keys.Count() - 65} more…";
+                        count += 1;
+                    }
+                    else if (count < 66)
+                    {
+                        var reason = warning.WarnReason;
+                        if (string.IsNullOrWhiteSpace(reason))
+                        {
+                            reason = "No reason provided.";
+                        }
+                        reason = reason.Replace("`", "\\`").Replace("*", "\\*");
+
+                        if (reason.Length > 29)
+                        {
+                            reason = Truncate(reason, 29) + "…";
+                        }
+                        str += $"`{Pad(warning.WarningId)}` **{reason}** • <t:{ModCmds.ToUnixTimestamp(warning.WarnTimestamp)}:R>\n";
+                        count += 1;
+                    }
+
+                }
+
                 if (Program.cfgjson.RecentWarningsPeriodHours != 0)
                 {
                     var hourRecentMatches = keys.Where(key =>
@@ -587,8 +585,8 @@ namespace Cliptok.Modules
                         .AddField("Total", keys.Count().ToString(), true);
                 }
 
+                embed.WithDescription(str);
             }
-
 
             return embed;
         }
@@ -712,14 +710,7 @@ namespace Cliptok.Modules
         [RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
         public async Task MostWarningsCmd(CommandContext ctx)
         {
-            try
-            {
-                await ctx.TriggerTypingAsync();
-            }
-            catch
-            {
-                // typing failing is unimportant, move on
-            }
+            await ModCmds.SafeTyping(ctx.Channel);
 
             var server = Program.redis.GetServer(Program.redis.GetEndPoints()[0]);
             var keys = server.Keys();
@@ -727,10 +718,9 @@ namespace Cliptok.Modules
             Dictionary<string, int> counts = new();
             foreach (var key in keys)
             {
-                ulong number;
-                if (ulong.TryParse(key.ToString(), out number))
+                if (ulong.TryParse(key.ToString(), out ulong number))
                 {
-                    counts[key.ToString()] = Program.db.HashGetAll(key).Count();
+                    counts[key.ToString()] = Program.db.HashGetAll(key).Length;
                 }
             }
 

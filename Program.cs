@@ -81,7 +81,7 @@ namespace Cliptok
         public static DiscordChannel badMsgLog;
         public static DiscordGuild homeGuild;
 
-        public static Random rand = new Random();
+        public static Random rand = new();
         public static HasteBinClient hasteUploader;
 
         public static OutputCapture outputCapture;
@@ -132,7 +132,12 @@ namespace Cliptok
             outputCapture = new OutputCapture();
 
             httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            var logFormat = "[{Timestamp:yyyy-MM-dd HH:mm:ss zzz}] [{Level}] {Message}{NewLine}{Exception}\n";
+            var logFormat = "[{Timestamp:yyyy-MM-dd HH:mm:ss zzz}] [{Level}] {Message}{NewLine}{Exception}";
+
+// resolves a weird bug on Windows where the limes are vomitted together
+#if DEBUG
+            logFormat += "\n";
+#endif
             Log.Logger = new LoggerConfiguration()
 #if DEBUG
                 .MinimumLevel.Debug()
@@ -308,7 +313,7 @@ namespace Cliptok
                     if (Environment.GetEnvironmentVariable("RAILWAY_GIT_COMMIT_SHA") != null)
                     {
                         commitHash = Environment.GetEnvironmentVariable("RAILWAY_GIT_COMMIT_SHA");
-                        commitHash = commitHash.Substring(0, Math.Min(commitHash.Length, 7));
+                        commitHash = commitHash[..Math.Min(commitHash.Length, 7)];
                     }
 
                     if (string.IsNullOrWhiteSpace(commitHash))
@@ -455,7 +460,7 @@ namespace Cliptok
                         {
                             // welp, their DMs are closed. not my problem.
                         }
-                        await e.Member.RemoveAsync();
+                        await e.Member.RemoveAsync(reason: "Raidmode is enabled, join was rejected.");
                     }
 
                     if (await db.HashExistsAsync("mutes", e.Member.Id))
@@ -620,6 +625,9 @@ namespace Cliptok
                 usedUrl = member.GetAvatarUrl(ImageFormat.Png);
                 //                }
 
+                if (usedHash.StartsWith("a_"))
+                    return false;
+
                 if (db.HashGet("safeAvatars", usedHash) == true)
                 {
                     discord.Logger.LogDebug("Unnecessary avatar check skipped for " + member.Id);
@@ -644,7 +652,7 @@ namespace Cliptok
                 if (httpStatus == System.Net.HttpStatusCode.OK)
                 {
                     var avatarResponse = JsonConvert.DeserializeObject<AvatarResponseBody>(responseText);
-                    discord.Logger.LogInformation($"Avatar check for {member.Id}: {httpStatusCode} {responseText}");
+                    discord.Logger.LogDebug($"Avatar check for {member.Id}: {httpStatusCode} {responseText}");
 
                     if (avatarResponse.Matched && avatarResponse.Key != "logo")
                     {
@@ -741,9 +749,23 @@ namespace Cliptok
                 return Task.CompletedTask;
             }
 
-            Task Discord_ThreadUpdated(DiscordClient client, ThreadUpdateEventArgs e)
+            async Task<Task> Discord_ThreadUpdated(DiscordClient client, ThreadUpdateEventArgs e)
             {
                 client.Logger.LogDebug(eventId: CliptokEventID, $"Thread updated in {e.Guild.Name}. New Thread Name: {e.ThreadAfter.Name}");
+
+                if (
+                    db.SetContains("openthreads", e.ThreadAfter.Id)
+                    && e.ThreadAfter.ThreadMetadata.IsArchived
+                    && e.ThreadAfter.ThreadMetadata.IsLocked != true
+                )
+                {
+                    await e.ThreadAfter.ModifyAsync(a =>
+                    {
+                        a.IsArchived = false;
+                        a.AuditLogReason = "Auto unarchiving thread due to enabled keepalive state.";
+                    });
+                }
+
                 return Task.CompletedTask;
             }
 

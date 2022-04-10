@@ -113,7 +113,7 @@ namespace Cliptok.Modules
             catch
             {
                 // A DM failing to send isn't important, but let's put it in chat just so it's somewhere.
-                if (!(channel is null))
+                if (channel is not null)
                 {
                     if (muteDuration == default)
                         await channel.SendMessageAsync($"{Program.cfgjson.Emoji.Muted} {naughtyUser.Mention} has been muted: **{reason}**");
@@ -123,7 +123,7 @@ namespace Cliptok.Modules
                 }
             }
 
-            if (!(channel is null) && alwaysRespond)
+            if (channel is not null && alwaysRespond)
             {
                 reason = reason.Replace("`", "\\`").Replace("*", "\\*");
                 if (muteDuration == default)
@@ -188,10 +188,11 @@ namespace Cliptok.Modules
                 {
                     await member.TimeoutAsync(until: null, reason: reason);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // do nothing. not important really...
+                    Program.discord.Logger.LogError(message: "Error ocurred trying to remove Timeout from {0}", args: member.Id, exception: ex, eventId: Program.CliptokEventID);
                 }
+
                 if (success)
                     await logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} Successfully unmuted <@{targetUser.Id}>!");
 

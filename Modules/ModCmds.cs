@@ -375,7 +375,8 @@ namespace Cliptok.Modules
         [HomeServer]
         public async Task No(CommandContext ctx)
         {
-            List<string> noResponses = new List<string> {
+            List<string> noResponses = new()
+            {
                 "Processing...",
                 "Considering it...",
                 "Hmmm...",
@@ -421,7 +422,7 @@ namespace Cliptok.Modules
             {
                 var msSinceEpoch = snowflake >> 22;
                 var msUnix = msSinceEpoch + 1420070400000;
-                await ctx.RespondAsync($"{(msUnix / 1000).ToString()}");
+                await ctx.RespondAsync($"{msUnix / 1000}");
             }
 
             [Command("relative")]
@@ -431,7 +432,7 @@ namespace Cliptok.Modules
             {
                 var msSinceEpoch = snowflake >> 22;
                 var msUnix = msSinceEpoch + 1420070400000;
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} <t:{(msUnix / 1000).ToString()}:R>");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} <t:{msUnix / 1000}:R>");
             }
 
             [Command("fulldate")]
@@ -441,7 +442,7 @@ namespace Cliptok.Modules
             {
                 var msSinceEpoch = snowflake >> 22;
                 var msUnix = msSinceEpoch + 1420070400000;
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} <t:{(msUnix / 1000).ToString()}:F>");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} <t:{msUnix / 1000}:F>");
             }
 
         }
@@ -626,14 +627,9 @@ namespace Cliptok.Modules
             [Description("Debug the list of mutes.")]
             public async Task MuteDebug(CommandContext ctx, DiscordUser targetUser = default)
             {
-                try
-                {
-                    await ctx.TriggerTypingAsync();
-                }
-                catch
-                {
-                    // typing failing is unimportant, move on
-                }
+
+                await SafeTyping(ctx.Channel);
+
 
                 string strOut = "";
                 if (targetUser == default)
@@ -688,14 +684,7 @@ namespace Cliptok.Modules
             [Description("Debug the list of bans.")]
             public async Task BanDebug(CommandContext ctx, DiscordUser targetUser = default)
             {
-                try
-                {
-                    await ctx.TriggerTypingAsync();
-                }
-                catch
-                {
-                    // typing failing is unimportant, move on
-                }
+                await SafeTyping(ctx.Channel);
 
                 string strOut = "";
                 if (targetUser == default)
@@ -795,7 +784,6 @@ namespace Cliptok.Modules
                     return;
                 }
 
-
                 DiscordMessage msg = await ctx.RespondAsync("executing..");
 
                 ShellResult finishedShell = RunShellCommand(command);
@@ -825,14 +813,8 @@ namespace Cliptok.Modules
             [Command("logs")]
             public async Task Logs(CommandContext ctx)
             {
-                try
-                {
-                    await ctx.TriggerTypingAsync();
-                }
-                catch
-                {
-                    // ignore typing errors
-                }
+                await SafeTyping(ctx.Channel);
+
                 string result = Regex.Replace(Program.outputCapture.Captured.ToString(), "ghp_[0-9a-zA-Z]{36}", "ghp_REDACTED").Replace(Environment.GetEnvironmentVariable("CLIPTOK_TOKEN"), "REDACTED").Replace(Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"), "REDACTED");
 
                 if (result.Length > 1947)
@@ -890,8 +872,8 @@ namespace Cliptok.Modules
         {
             DiscordMessage return_message = await ctx.Message.RespondAsync("Pinging...");
             ulong ping = (return_message.Id - ctx.Message.Id) >> 22;
-            Char[] choices = new Char[] { 'a', 'e', 'o', 'u', 'i', 'y' };
-            Char letter = choices[Program.rand.Next(0, choices.Length)];
+            char[] choices = new char[] { 'a', 'e', 'o', 'u', 'i', 'y' };
+            char letter = choices[Program.rand.Next(0, choices.Length)];
             await return_message.ModifyAsync($"P{letter}ng! 🏓\n" +
                 $"• It took me `{ping}ms` to reply to your message!\n" +
                 $"• Last Websocket Heartbeat took `{ctx.Client.Ping}ms`!");
@@ -995,7 +977,7 @@ namespace Cliptok.Modules
 
             if (user != default)
             {
-                ctx.Channel.SendMessageAsync(user.Mention, embed);
+                await ctx.Channel.SendMessageAsync(user.Mention, embed);
             }
             else if (ctx.Message.ReferencedMessage != null)
             {
@@ -1003,11 +985,11 @@ namespace Cliptok.Modules
                     .WithEmbed(embed)
                     .WithReply(ctx.Message.ReferencedMessage.Id, mention: true);
 
-                ctx.Channel.SendMessageAsync(messageBuild);
+                await ctx.Channel.SendMessageAsync(messageBuild);
             }
             else
             {
-                ctx.Channel.SendMessageAsync(embed);
+                await ctx.Channel.SendMessageAsync(embed);
             }
         }
 
@@ -1030,7 +1012,7 @@ namespace Cliptok.Modules
             var urlMatches = MessageEvent.url_rx.Matches(content);
             if (urlMatches.Count > 0 && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != null && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != "useyourimagination")
             {
-                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"));
+                HttpRequestMessage request = new(HttpMethod.Post, Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"));
                 request.Headers.Add("User-Agent", "Cliptok (https://github.com/Erisa/Cliptok)");
                 MessageEvent.httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -1042,7 +1024,6 @@ namespace Cliptok.Modules
                 request.Content = new StringContent(JsonConvert.SerializeObject(bodyObject), Encoding.UTF8, "application/json");
 
                 HttpResponseMessage response = await httpClient.SendAsync(request);
-                int httpStatusCode = (int)response.StatusCode;
                 var httpStatus = response.StatusCode;
                 string responseText = await response.Content.ReadAsStringAsync();
 
@@ -1098,7 +1079,7 @@ namespace Cliptok.Modules
                     string output = $"{Program.cfgjson.Emoji.Unbanned} Raidmode is currently **enabled**.";
                     ulong expirationTimeUnix = (ulong)Program.db.HashGet("raidmode", ctx.Guild.Id);
                     output += $"\nRaidmode ends <t:{expirationTimeUnix}>";
-                    await ctx.RespondAsync("output");
+                    await ctx.RespondAsync(output);
                 }
                 else
                 {
@@ -1205,6 +1186,114 @@ namespace Cliptok.Modules
             }
         }
 
+        [Command("archive")]
+        [Description("Archive the current thread or another thread.")]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task ArchiveCommand(CommandContext ctx, DiscordChannel channel = default)
+        {
+            if (channel == default)
+                channel = ctx.Channel;
+
+            if (channel.Type is not ChannelType.PrivateThread && channel.Type is not ChannelType.PublicThread)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {channel.Mention} is not a thread!");
+                return;
+            }
+
+            var thread = (DiscordThreadChannel)channel;
+            await Program.db.SetRemoveAsync("openthreads", thread.Id);
+
+            await thread.ModifyAsync(a =>
+            {
+                a.IsArchived = true;
+                a.Locked = false;
+            });
+        }
+
+        [Command("lockthread")]
+        [Description("Lock the current thread or another thread.")]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task LockThreadCommand(CommandContext ctx, DiscordChannel channel = default)
+        {
+            if (channel == default)
+                channel = ctx.Channel;
+
+            if (channel.Type is not ChannelType.PrivateThread && channel.Type is not ChannelType.PublicThread)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {channel.Mention} is not a thread!");
+                return;
+            }
+
+            var thread = (DiscordThreadChannel)channel;
+            await Program.db.SetRemoveAsync("openthreads", thread.Id);
+
+            await thread.ModifyAsync(a =>
+            {
+                a.IsArchived = true;
+                a.Locked = true;
+            });
+        }
+
+        [Command("unarchive")]
+        [Description("Unarchive a thread")]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task UnarchiveCommand(CommandContext ctx, DiscordChannel channel = default)
+        {
+            if (channel == default)
+                channel = ctx.Channel;
+
+            if (channel.Type is not ChannelType.PrivateThread && channel.Type is not ChannelType.PublicThread)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {channel.Mention} is not a thread!");
+                return;
+            }
+
+            var thread = (DiscordThreadChannel)(channel);
+
+            await thread.ModifyAsync(a =>
+            {
+                a.IsArchived = false;
+                a.Locked = false;
+            });
+        }
+
+        [Command("keepalive")]
+        [Description("Toggle whether or not to keep a threed alive permamnently until locked.")]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task KeepaliveCommand(CommandContext ctx, DiscordChannel channel = default)
+        {
+            if (channel == default)
+                channel = ctx.Channel;
+
+            if (channel.Type is not ChannelType.PrivateThread && channel.Type is not ChannelType.PublicThread)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {channel.Mention} is not a thread!");
+                return;
+            }
+
+            var thread = (DiscordThreadChannel)(channel);
+
+            if (Program.db.SetContains("openthreads", thread.Id))
+            {
+                await Program.db.SetRemoveAsync("openthreads", thread.Id);
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Off} Thread keepalive for {thread.Mention} has been **disabled**!\nThis thread will close naturally.");
+            }
+            else
+            {
+                if (thread.ThreadMetadata.IsArchived)
+                {
+                    await thread.ModifyAsync(thread =>
+                    {
+                        thread.IsArchived = false;
+                    });
+                }
+
+                await Program.db.SetAddAsync("openthreads", thread.Id);
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.On} Thread keepalive for {thread.Mention} has been **enabled**!\nTo archive this thread: disable keepalive, Lock the thread or use the `archive` command.");
+
+            }
+        }
+
         [Command("listadd")]
         [Description("Add a piece of text to a public list.")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator)]
@@ -1216,12 +1305,12 @@ namespace Cliptok.Modules
         {
             if (Environment.GetEnvironmentVariable("CLIPTOK_GITHUB_TOKEN") == null)
             {
-                ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} `CLIPTOK_GITHUB_TOKEN` was not set, so GitHub API commands cannot be used.");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} `CLIPTOK_GITHUB_TOKEN` was not set, so GitHub API commands cannot be used.");
                 return;
             }
 
             if (!fileName.EndsWith(".txt"))
-                fileName = fileName + ".txt";
+                fileName += ".txt";
 
             if (content.Length < 3)
             {
@@ -1231,7 +1320,7 @@ namespace Cliptok.Modules
 
             await ctx.Channel.TriggerTypingAsync();
 
-            if (content.Substring(0, 3) == "```")
+            if (content[..3] == "```")
                 content = content.Replace("```", "").Trim();
 
             string[] lines = content.Split(
@@ -1282,6 +1371,19 @@ namespace Cliptok.Modules
             else
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} An error with code `{response.StatusCode}` was returned when trying to request the Action run.\n" +
                     $"Body: ```json\n{responseText}```");
+        }
+
+        public static async Task<bool> SafeTyping(DiscordChannel channel)
+        {
+            try
+            {
+                await channel.TriggerTypingAsync();
+                return true;
+            } catch (Exception ex)
+            {
+                Program.discord.Logger.LogError(eventId: Program.CliptokEventID, exception: ex, message: "Error ocurred trying to type in {0}", args: channel.Id);
+                return false;
+            }
         }
 
         public class GitHubDispatchBody
