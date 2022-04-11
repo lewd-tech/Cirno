@@ -147,9 +147,9 @@ namespace Cliptok.Modules
             {
                 member = await guild.GetMemberAsync(targetUser.Id);
             }
-            catch (DSharpPlus.Exceptions.NotFoundException)
+            catch (DSharpPlus.Exceptions.NotFoundException ex)
             {
-                // they probably left :(
+                Program.discord.Logger.LogWarning(eventId: Program.CliptokEventID, exception: ex, message: "Failed to unmute {0} in {1} because they weren't in the server.", $"{targetUser.Username}#{targetUser.Discriminator}", guild.Name);
             }
 
             if (member == default)
@@ -239,22 +239,21 @@ namespace Cliptok.Modules
         [Aliases("umute")]
         [Description("Unmutes a previously muted user, typically ahead of the standard expiration time. See also: mute")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
-        public async Task UnmuteCmd(CommandContext ctx, [Description("The user you're trying to unmute.")] DiscordUser targetUser)
+        public async Task UnmuteCmd(CommandContext ctx, [Description("The user you're trying to unmute.")] DiscordUser targetUser, string reason = "No reason provided.")
         {
-            string reason = $"[Manual unmute by {ctx.User.Username}#{ctx.User.Discriminator}]";
-            DiscordGuild guild = ctx.Guild;
+            reason = $"[Manual unmute by {ctx.User.Username}#{ctx.User.Discriminator}]: {reason}";
 
             // todo: store per-guild
-            DiscordRole mutedRole = guild.GetRole(Program.cfgjson.MutedRole);
+            DiscordRole mutedRole = ctx.Guild.GetRole(Program.cfgjson.MutedRole);
 
             DiscordMember member = default;
             try
             {
-                member = await guild.GetMemberAsync(targetUser.Id);
+                member = await ctx.Guild.GetMemberAsync(targetUser.Id);
             }
-            catch (DSharpPlus.Exceptions.NotFoundException)
+            catch (DSharpPlus.Exceptions.NotFoundException ex)
             {
-                // nothing
+                Program.discord.Logger.LogWarning(eventId: Program.CliptokEventID, exception: ex, message: "Failed to unmute {0} in {1} because they weren't in the server.", $"{targetUser.Username}#{targetUser.Discriminator}", ctx.Guild.Name);
             }
 
             if ((await Program.db.HashExistsAsync("mutes", targetUser.Id)) || (member != default && member.Roles.Contains(mutedRole)))
@@ -290,7 +289,7 @@ namespace Cliptok.Modules
             }
             catch (DSharpPlus.Exceptions.NotFoundException)
             {
-                // nothing
+                // is this worth logging?
             }
 
             if (targetMember != default && Warnings.GetPermLevel(ctx.Member) == ServerPermLevel.TrialModerator && (Warnings.GetPermLevel(targetMember) >= ServerPermLevel.TrialModerator || targetMember.IsBot))
