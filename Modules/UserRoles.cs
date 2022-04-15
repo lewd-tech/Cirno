@@ -125,7 +125,7 @@ namespace Cliptok.Modules
 
         [
             Command("join-insider-rp"),
-            Aliases("join-insiders-rp"),
+            Aliases("join-insiders-rp", "join-insiders-11-rp", "join-insider-11-rp"),
             Description("Gives you the Windows 11 Insiders (Release Preview) role"),
             HomeServer
         ]
@@ -233,7 +233,7 @@ namespace Cliptok.Modules
 
         [
             Command("leave-insider-rp"),
-            Aliases("leave-insiders-rp"),
+            Aliases("leave-insiders-rp", "leave-insiders-11-rp", "leave-insider-11-rp"),
             Description("Removes the Windows 11 Insiders (Release Preview) role"),
             HomeServer
         ]

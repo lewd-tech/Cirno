@@ -107,7 +107,7 @@ namespace Cliptok
 
             Log.Logger = new LoggerConfiguration()
 #if DEBUG
-                .MinimumLevel.Debug()
+                .MinimumLevel.Verbose()
 #else
                 .Filter.ByExcluding("Contains(@m, 'Unknown event:')")
                 .MinimumLevel.Information()
@@ -183,7 +183,6 @@ namespace Cliptok
 
             if (Environment.GetEnvironmentVariable("RAVY_API_TOKEN") == null || Environment.GetEnvironmentVariable("RAVY_API_TOKEN") == "goodluckfindingone")
                 discord.Logger.LogWarning(CliptokEventID, "Ravy API features disabled due to missing API token.");
-
 
             var slash = discord.UseSlashCommands();
             slash.SlashCommandErrored += async (s, e) =>
@@ -596,7 +595,7 @@ namespace Cliptok
                 if (usedHash.StartsWith("a_"))
                     return false;
 
-                if (db.HashGet("safeAvatars", usedHash) == true)
+                if (db.SetContains("safeavatarstore", usedHash))
                 {
                     discord.Logger.LogDebug("Unnecessary avatar check skipped for " + member.Id);
                     return false;
@@ -636,7 +635,7 @@ namespace Cliptok
                     }
                     else if (!avatarResponse.Matched)
                     {
-                        await db.HashSetAsync("safeAvatars", usedHash, true);
+                        await db.SetAddAsync("safeavatarstore", usedHash);
                         return false;
                     }
                 }
@@ -675,7 +674,7 @@ namespace Cliptok
                     return;
 
                 // avoid conflicts with modmaail
-                if (e.Command.QualifiedName == "edit")
+                if (e.Command.QualifiedName == "edit" || e.Command.QualifiedName ==  "timestamp")
                     return;
 
                 e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Exception occurred during {0}'s invocation of '{1}'", e.Context.User.Username, e.Context.Command.QualifiedName);

@@ -105,11 +105,14 @@ namespace Cliptok.Modules
 
         }
 
-        static async Task SendInfringingMessaageAsync(DiscordChannel channel, DiscordMessage infringingMessage, string reason, string messageURL, (string name, string value, bool inline) extraField = default)
+        static async Task SendInfringingMessaageAsync(DiscordChannel channel, DiscordMessage infringingMessage, string reason, string messageURL, (string name, string value, bool inline) extraField = default, string content = default, DiscordColor? colour = null, string jumpText = "Jump to warning")
         {
+            if (colour == null)
+                colour = new DiscordColor(0xf03916);
+
             var embed = new DiscordEmbedBuilder()
             .WithDescription(infringingMessage.Content)
-            .WithColor(new DiscordColor(0xf03916))
+            .WithColor((DiscordColor)colour)
             .WithTimestamp(infringingMessage.Timestamp)
             .WithFooter(
                 $"User ID: {infringingMessage.Author.Id}",
@@ -119,15 +122,21 @@ namespace Cliptok.Modules
                 $"{infringingMessage.Author.Username}#{infringingMessage.Author.Discriminator} in #{infringingMessage.Channel.Name}",
                 null,
                 infringingMessage.Author.AvatarUrl
-            )
-            .AddField("Reason", reason, true);
+            );
+
+            if (reason != null && reason != "")
+                embed.AddField("Reason", reason, true);
+
             if (messageURL != null)
-                embed.AddField("Message link", $"[`Jump to warning`]({messageURL})", true);
+                embed.AddField("Message link", $"[`{jumpText}`]({messageURL})", true);
 
             if (extraField != default)
                 embed.AddField(extraField.name, extraField.value, extraField.inline);
 
-            await channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} Deleted infringing message by {infringingMessage.Author.Mention} in {infringingMessage.Channel.Mention}:", embed);
+            if (content == default)
+                content = $"{Program.cfgjson.Emoji.Denied} Deleted infringing message by {infringingMessage.Author.Mention} in {infringingMessage.Channel.Mention}:";
+
+            await channel.SendMessageAsync(content, embed);
         }
 
         static async Task DeleteAndWarnAsync(DiscordMessage message, string reason, DiscordClient client)
@@ -188,6 +197,62 @@ namespace Cliptok.Modules
 
                 if (message.Author == null || message.Author.Id == client.CurrentUser.Id)
                     return;
+
+                if (!isAnEdit && channel.IsPrivate && Program.cfgjson.DmLogChannelId != 0)
+                {
+                    var dmLog = await client.GetChannelAsync(Program.cfgjson.DmLogChannelId);
+                    DiscordEmbedBuilder embed = new DiscordEmbedBuilder()
+                        .WithAuthor($"{message.Author.Username}#{message.Author.Discriminator}", null, message.Author.AvatarUrl)
+                        .WithDescription(message.Content)
+                        .WithFooter($"Channel ID: {channel.Id} | User ID: {message.Author.Id}");
+
+                    if (message.Stickers.Count > 0)
+                    {
+                        foreach(var sticker in message.Stickers)
+                        {
+                            var url = sticker.StickerUrl;
+                            // d#+ is dumb
+                            if (sticker.FormatType is StickerFormat.APNG)
+                            {
+                                url = url.Replace(".apng", ".png");
+                            }
+
+                            string fieldValue = $"[{sticker.Name}]({url})";
+                            if (sticker.FormatType is StickerFormat.APNG or StickerFormat.LOTTIE)
+                            {
+                                fieldValue += " (Animated)";
+                            }
+
+                            embed.AddField($"Sticker", fieldValue);
+
+                            if (message.Attachments.Count == 0 && message.Stickers.Count == 1)
+                            {
+                                embed.WithImageUrl(url);
+                            }
+                        }
+                    }
+
+                    if (message.Attachments.Count > 0)
+                        embed.WithImageUrl(message.Attachments[0].Url)
+                            .AddField($"Attachment", $"[{message.Attachments[0].FileName}]({message.Attachments[0].Url})");
+
+                    List<DiscordEmbed> embeds = new List<DiscordEmbed>();
+                    embeds.Add(embed);
+
+                    if (message.Attachments.Count > 1)
+                    {
+                        foreach(var attachment in message.Attachments.Skip(1))
+                        {
+                            embeds.Add(new DiscordEmbedBuilder()
+                                .WithAuthor($"{message.Author.Username}#{message.Author.Discriminator}", null, message.Author.AvatarUrl)
+                                .AddField("Additional attachment", $"[{attachment.FileName}]({attachment.Url})")
+                                .WithImageUrl(attachment.Url));
+                        }
+                    }
+
+                    var msg = new DiscordMessageBuilder().AddEmbeds(embeds.AsEnumerable());
+                    await dmLog.SendMessageAsync(msg);
+                }
 
                 if (!isAnEdit && message.Author.Id == Program.cfgjson.ModmailUserId && message.Content == "@here" && message.Embeds[0].Footer.Text.Contains("User ID:"))
                 {
@@ -254,7 +319,7 @@ namespace Cliptok.Modules
                     // Matching word list
                     foreach (var listItem in Program.cfgjson.WordListList)
                     {
-                        if (listItem.ExcludedChannels.Contains(message.Channel.Id))
+                        if (listItem.ExcludedChannels.Contains(message.Channel.Id) || listItem.Passive)
                         {
                             continue;
                         }
@@ -631,6 +696,31 @@ namespace Cliptok.Modules
                     }
                 }
 
+                // Check the passive lists AFTER all other checks.
+                if (Warnings.GetPermLevel(member) >= ServerPermLevel.TrialModerator)
+                    return;
+
+                foreach (var listItem in Program.cfgjson.WordListList)
+                {
+                    if (!listItem.Passive)
+                    {
+                        continue;
+                    }
+                    else if (CheckForNaughtyWords(message.Content.ToLower(), listItem))
+                    {
+                        DiscordChannel logChannel = Program.badMsgLog;
+
+                        if (listItem.ChannelId != null)
+                        {
+                            logChannel = await Program.discord.GetChannelAsync((ulong)listItem.ChannelId);
+                        }
+
+                        string content = $"{Program.cfgjson.Emoji.Warning} Detected potentially suspicious message by {message.Author.Mention} in {message.Channel.Mention}:";
+
+                        await SendInfringingMessaageAsync(logChannel, message, listItem.Reason, Warnings.MessageLink(message), content: content, colour: new DiscordColor(0xFEC13D), jumpText: "Jump to message");
+
+                    }
+                }
             }
             catch (Exception e)
             {

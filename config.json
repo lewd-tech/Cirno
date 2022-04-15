@@ -155,5 +155,6 @@
     "ref": "main",
     "workflowId": "append-lists-txt.yml"
   },
-  "feedbackHubChannelId": 865734819995582464
+  "feedbackHubChannelId": 865734819995582464,
+  "dmLogChannelId": 963600228286607391
 }

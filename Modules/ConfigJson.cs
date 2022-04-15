@@ -46,7 +46,7 @@ namespace Cliptok
         public string Reason { get; set; }
     }
 
-    public struct ConfigJson
+    public class ConfigJson
     {
         [JsonProperty("core")]
         public CoreConfig Core { get; private set; }
@@ -210,6 +210,9 @@ namespace Cliptok
         [JsonProperty("feedbackHubChannelId")]
         public ulong FeedbackHubChannelId { get; private set; }
 
+        [JsonProperty("dmLogChannelId")]
+        public ulong DmLogChannelId { get; private set; } = 0;
+
     }
 
     public class WorkflowConfig
@@ -242,6 +245,12 @@ namespace Cliptok
 
         [JsonProperty("excludedChannels")]
         public List<ulong> ExcludedChannels { get; private set; } = new();
+
+        [JsonProperty("passive")]
+        public bool Passive { get; private set; } = false;
+
+        [JsonProperty("channelId")]
+        public ulong? ChannelId { get; private set; }
     }
 
     public class AutoBanIdSet
