@@ -111,7 +111,7 @@ namespace Cliptok.Modules
                 return false;
 
             var level = Warnings.GetPermLevel(ctx.Member);
-            if (level >= this.TargetLvl)
+            if (level >= TargetLvl)
                 return true;
             else
                 return false;
@@ -229,7 +229,8 @@ namespace Cliptok.Modules
             {
                 screeningForm = await channel.Guild.GetMembershipScreeningFormAsync();
                 rules = screeningForm.Fields.FirstOrDefault(field => field.Type is MembershipScreeningFieldType.Terms).Values;
-            } catch (DSharpPlus.Exceptions.NotFoundException ex)
+            }
+            catch (DSharpPlus.Exceptions.NotFoundException)
             {
                 // thats fine, community must be disabled
             }
@@ -283,7 +284,12 @@ namespace Cliptok.Modules
                 // We failed to DM the user, this isn't important to note.
             }
 
-            await Program.logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Warning} New warning for {targetUser.Mention}!", await FancyWarnEmbedAsync(warning, true, 0xFEC13D, false, targetUser.Id));
+            await Program.logChannel.SendMessageAsync(
+                new DiscordMessageBuilder()
+                    .WithContent($"{Program.cfgjson.Emoji.Warning} New warning for {targetUser.Mention}!")
+                    .WithEmbed(await FancyWarnEmbedAsync(warning, true, 0xFEC13D, false, targetUser.Id))
+                    .WithAllowedMentions(Mentions.None)
+            );
 
             // automute handling
             var warningsOutput = Program.db.HashGetAll(targetUser.Id.ToString()).ToDictionary(
@@ -412,13 +418,12 @@ namespace Cliptok.Modules
             var sb = new StringBuilder();
             if (span.Days > 365)
             {
-                int years = (int)(span.Days / 365);
+                int years = span.Days / 365;
                 sb.AppendFormat("{0} year{1}", years, years > 1 ? "s" : String.Empty);
-                int remDays = (int)(span.Days - (365 * years));
+                int remDays = span.Days - (365 * years);
                 int months = remDays / 30;
                 if (months > 0)
                     sb.AppendFormat(", {0} month{1}", months, months > 1 ? "s" : String.Empty);
-                // sb.AppendFormat(" ago");
             }
             else if (span.Days > 0)
                 sb.AppendFormat("{0} day{1}", span.Days, span.Days > 1 ? "s" : String.Empty);
@@ -669,8 +674,13 @@ namespace Cliptok.Modules
                 {
                     await ctx.RespondAsync($"{Program.cfgjson.Emoji.Deleted} Successfully deleted warning `{Pad(warnId)}` (belonging to {targetUser.Mention})");
 
-                    await Program.logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Deleted} Warning deleted:" +
-                        $"`{Pad(warnId)}` (belonging to {targetUser.Mention}, deleted by {ctx.Member.Username}#{ctx.Member.Discriminator})", await FancyWarnEmbedAsync(warning, true, 0xf03916, true, targetUser.Id));
+                    await Program.logChannel.SendMessageAsync(
+                        new DiscordMessageBuilder()
+                            .WithContent($"{Program.cfgjson.Emoji.Deleted} Warning deleted:" +
+                            $"`{Pad(warnId)}` (belonging to {targetUser.Mention}, deleted by {ctx.Member.Username}#{ctx.Member.Discriminator})")
+                            .WithEmbed(await FancyWarnEmbedAsync(warning, true, 0xf03916, true, targetUser.Id))
+                            .WithAllowedMentions(Mentions.None)
+                        );
                 }
                 else
                 {
@@ -753,8 +763,13 @@ namespace Cliptok.Modules
                 EditWarning(targetUser, warnId, ctx.User, newReason);
                 await msg.ModifyAsync($"{Program.cfgjson.Emoji.Information} Successfully edited warning `{Pad(warnId)}` (belonging to {targetUser.Mention})",
                     await FancyWarnEmbedAsync(GetWarning(targetUser.Id, warnId), userID: targetUser.Id));
-                await Program.logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} Warning edited:" +
-                    $"`{Pad(warnId)}` (belonging to {targetUser.Mention})", await FancyWarnEmbedAsync(GetWarning(targetUser.Id, warnId), true, userID: targetUser.Id));
+
+                await Program.logChannel.SendMessageAsync(
+                    new DiscordMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Information} Warning edited:" +
+                        $"`{Pad(warnId)}` (belonging to {targetUser.Mention})")
+                        .WithEmbed(await FancyWarnEmbedAsync(GetWarning(targetUser.Id, warnId), true, userID: targetUser.Id))
+                    );
             }
         }
 

@@ -3,6 +3,7 @@ using DSharpPlus.Entities;
 using DSharpPlus.SlashCommands;
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Cliptok.Modules
@@ -269,7 +270,145 @@ namespace Cliptok.Modules
             else if (forceOverride)
                 operationText = "force ";
             await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successully {operationText}transferred warnings from {sourceUser.Mention} to {targetUser.Mention}!");
-            await Program.logChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} Warnings from {sourceUser.Mention} were {operationText}transferred to {targetUser.Mention} by `{ctx.User.Username}#{ctx.User.Discriminator}`", Warnings.GenerateWarningsEmbed(targetUser));
+            await Program.logChannel.SendMessageAsync(
+                new DiscordMessageBuilder()
+                    .WithContent($"{Program.cfgjson.Emoji.Information} Warnings from {sourceUser.Mention} were {operationText}transferred to {targetUser.Mention} by `{ctx.User.Username}#{ctx.User.Discriminator}`")
+                    .WithEmbed(Warnings.GenerateWarningsEmbed(targetUser))
+           );
+        }
+
+        [SlashCommand("announcebuild", "Announce a Windows Insider build in the current channel.")]
+        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task AnnounceBuildSlashCommand(InteractionContext ctx,
+            [Choice("Windows 10", 10)]
+            [Choice("Windows 11", 11)]
+            [Option("windows_version", "The Windows version to announce a build of. Must be either 10 or 11.")] long windowsVersion,
+
+            [Option("build_number", "Windows build number, including any decimals (Decimals are optional). Do not include the word Build.")] string buildNumber,
+
+            [Option("blog_link", "The link to the Windows blog entry relating to this build.")] string blogLink,
+
+            [Choice("Dev Channel", "Dev")]
+            [Choice("Beta Channel", "Beta")]
+            [Choice("Release Preview Channel", "RP")]
+            [Option("insider_role1", "The first insider role to ping.")] string insiderChannel1,
+
+            [Choice("Dev Channel", "Dev")]
+            [Choice("Beta Channel", "Beta")]
+            [Choice("Release Preview Channel", "RP")]
+            [Option("insider_role2", "The second insider role to ping.")] string insiderChannel2 = "",
+
+            [Option("thread", "The thread to mention in the announcement.")] DiscordChannel threadChannel = default,
+            [Option("flavour_text", "Extra text appended on the end of the main line, replacing :WindowsInsider: or :Windows10:")] string flavourText = "",
+            [Option("autothread_name", "If no thread is given, create a thread with this name.")] string autothreadName = "Build {0} ({1})",
+
+            [Option("lockdown", "If supplied, lock the channel for a certain period of time after announcing the build.")] string lockdownTime = ""
+        )
+        {
+            if (windowsVersion == 10 && insiderChannel1 != "RP")
+            {
+                await ctx.RespondAsync(text: "Windows 10 only has a Release Preview Channel.", ephemeral: true);
+                return;
+            }
+
+            if (flavourText == "" && windowsVersion == 10)
+            {
+                flavourText = Program.cfgjson.Emoji.Windows10;
+            }
+            else if (flavourText == "" && windowsVersion == 11)
+            {
+                flavourText = Program.cfgjson.Emoji.Insider;
+            }
+
+            string roleKey1;
+            if (windowsVersion == 10 && insiderChannel1 == "RP")
+            {
+                roleKey1 = "rp10";
+            }
+            else
+            {
+                roleKey1 = insiderChannel1.ToLower();
+            }
+
+            DiscordRole insiderRole1 = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles[roleKey1]);
+            DiscordRole insiderRole2 = default;
+
+            StringBuilder channelString = new StringBuilder();
+
+            string insiderChannel1Pretty = insiderChannel1 == "RP" ? "Release Preview" : insiderChannel1;
+
+            if (insiderChannel1 == "RP" || insiderChannel2 == "RP")
+            {
+                channelString.Append($"the Windows {windowsVersion} ");
+            }
+            else
+            {
+                channelString.Append("the ");
+            }
+
+            channelString.Append($"**{insiderChannel1Pretty} ");
+
+            if (insiderChannel2 != "")
+            {
+                string insiderChannel2Pretty = insiderChannel2 == "RP" ? "Release Preview" : insiderChannel2;
+                channelString.Append($"**and **{insiderChannel2Pretty}** Channels");
+            }
+            else
+            {
+                channelString.Append("Channel**");
+            }
+
+            if (insiderChannel2 != "")
+            {
+                string roleKey2;
+                if (windowsVersion == 10 && insiderChannel2 == "RP")
+                {
+                    roleKey2 = "rp10";
+                }
+                else
+                {
+                    roleKey2 = insiderChannel1.ToLower();
+                }
+
+                insiderRole2 = ctx.Guild.GetRole(Program.cfgjson.AnnouncementRoles[roleKey2]);
+            }
+
+            if (threadChannel == default)
+            {
+                string threadBrackets = insiderChannel1;
+                if (insiderChannel2 != "")
+                    threadBrackets = $"{insiderChannel1} & {insiderChannel2}";
+
+                string threadName = string.Format(autothreadName, buildNumber, threadBrackets);
+                threadChannel = await ctx.Channel.CreateThreadAsync(threadName, AutoArchiveDuration.Day, ChannelType.PublicThread, "Creating thread for Insider build.");
+                var initialMsg = await threadChannel.SendMessageAsync(blogLink);
+                await initialMsg.PinAsync();
+            }
+
+            await insiderRole1.ModifyAsync(mentionable: true);
+            if (insiderChannel2 != "")
+                await insiderRole2.ModifyAsync(mentionable: true);
+
+            await ctx.RespondAsync($"{insiderRole1.Mention}{(insiderChannel2 != "" ? $" {insiderRole2.Mention}\n" : " - ")}Hi Insiders!\n\nWindows {windowsVersion} Build **{buildNumber}** has just been released to {channelString}! {flavourText}\n\nCheck it out here: {blogLink}\n\nDiscuss it here: {threadChannel.Mention}");
+
+            await insiderRole1.ModifyAsync(mentionable: false);
+            if (insiderChannel2 != "")
+                await insiderRole2.ModifyAsync(mentionable: false);
+
+            if (lockdownTime != "")
+            {
+                TimeSpan lockDuration = default;
+                try
+                {
+                    lockDuration = HumanDateParser.HumanDateParser.Parse(lockdownTime).Subtract(DateTime.Now);
+                }
+                catch
+                {
+                    lockDuration = TimeSpan.FromHours(2);
+                }
+
+                await Lockdown.LockChannelAsync(channel: ctx.Channel, duration: lockDuration);
+            }
         }
 
         [SlashCommandGroup("raidmode", "Commands relating to Raidmode")]
@@ -341,6 +480,67 @@ namespace Cliptok.Modules
                 else
                 {
                     await ctx.RespondAsync($" Raidmode is already **disabled**.");
+                }
+            }
+        }
+
+        [SlashCommand("slowmode", "Slow down the channel...")]
+        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task SlowmodeSlashCommand(
+            InteractionContext ctx,
+            [Option("slow_time", "Allowed time between each users messages. 0 for off. A number of seconds or a parseable time.")] string timeToParse,
+            [Option("channel", "The channel to slow down, if not the current one.")] DiscordChannel channel = default
+        )
+        {
+            if (channel == default)
+                channel = ctx.Channel;
+
+            TimeSpan slowmodeTime;
+
+            if (int.TryParse(timeToParse, out int seconds))
+            {
+                await channel.ModifyAsync(ch => ch.PerUserRateLimit = seconds);
+                if (seconds > 0)
+                {
+                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} Slowmode has been set in {channel.Mention}!"
+                        + $"\nUsers will only be send messages once every **{Warnings.TimeToPrettyFormat(TimeSpan.FromSeconds(seconds), false)}** until the setting is disabled or changed.");
+                }
+            }
+            else
+            {
+                try
+                {
+                    DateTime anchorTime = DateTime.Now;
+                    slowmodeTime = HumanDateParser.HumanDateParser.Parse(timeToParse, anchorTime).Subtract(anchorTime);
+
+                    seconds = (int)slowmodeTime.TotalSeconds;
+
+                    if (seconds > 0 && seconds <= 21600)
+                    {
+                        await channel.ModifyAsync(ch => ch.PerUserRateLimit = seconds);
+                        await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} Slowmode has been set in {channel.Mention}!"
+                            + $"\nUsers will only be send messages once every **{Warnings.TimeToPrettyFormat(TimeSpan.FromSeconds(seconds), false)}** until the setting is disabled or changed.");
+                    }
+                    else if (seconds > 21600)
+                    {
+                        await ctx.RespondAsync("Time cannot be longer than 6 hours.", ephemeral: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var embed = new DiscordEmbedBuilder
+                    {
+                        Color = new DiscordColor("#FF0000"),
+                        Title = "An exception occurred when executing a command",
+                        Description = $"`{ex.GetType()}` occurred when executing.",
+                        Timestamp = DateTime.UtcNow
+                    };
+                    embed.WithFooter(Program.discord.CurrentUser.Username, Program.discord.CurrentUser.AvatarUrl)
+                        .AddField("Message", ex.Message);
+                    if (ex is ArgumentException)
+                        embed.AddField("Note", "This usually means that you used the command incorrectly.\n" +
+                            "Please double-check how to use this command.");
+                    await ctx.RespondAsync(embed: embed.Build(), ephemeral: true).ConfigureAwait(false);
                 }
             }
         }
