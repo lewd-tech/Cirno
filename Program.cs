@@ -440,7 +440,6 @@ namespace Cliptok
                     {
                         await e.Member.TimeoutAsync(null, "Removing timeout since member was presumably unmuted while left");
                     }
-                    CheckAndDehoistMemberAsync(e.Member);
 
                     if (db.HashExists("unbanned", e.Member.Id))
                         return;
@@ -548,6 +547,17 @@ namespace Cliptok
             {
                 Task.Run(async () =>
                 {
+                    // in case we end up in random guilds
+                    if (e.Guild.Id != cfgjson.ServerID)
+                        return;
+
+                    // if they are auto banned, don't progress any further
+                    if (await CheckAvatarsAsync(e.Member))
+                        return;
+
+                    if (await UsernameCheckAsync(e.Member))
+                        return;
+
                     var muteRole = e.Guild.GetRole(cfgjson.MutedRole);
                     var userMute = await db.HashGetAsync("mutes", e.Member.Id);
 
@@ -559,12 +569,7 @@ namespace Cliptok
                     if (differrence > 10 && !userMute.IsNull && !e.Member.Roles.Contains(muteRole))
                         db.HashDeleteAsync("mutes", e.Member.Id);
 
-                    bool usernameBanned = await UsernameCheckAsync(e.Member);
-                    if (usernameBanned)
-                        return;
-
                     CheckAndDehoistMemberAsync(e.Member);
-                    CheckAvatarsAsync(e.Member);
                 }
                 );
             }
@@ -673,7 +678,7 @@ namespace Cliptok
                 if (e.Exception is CommandNotFoundException && (e.Command == null || e.Command.QualifiedName != "help"))
                     return;
 
-                // avoid conflicts with modmaail
+                // avoid conflicts with modmail
                 if (e.Command.QualifiedName == "edit" || e.Command.QualifiedName == "timestamp")
                     return;
 
@@ -711,6 +716,10 @@ namespace Cliptok
 
             Task Discord_ThreadCreated(DiscordClient client, ThreadCreateEventArgs e)
             {
+                // in case we end up in random guilds
+                if (e.Guild.Id != cfgjson.ServerID)
+                    return Task.CompletedTask;
+
                 e.Thread.JoinThreadAsync();
                 client.Logger.LogDebug(eventId: CliptokEventID, $"Thread created in {e.Guild.Name}. Thread Name: {e.Thread.Name}");
                 return Task.CompletedTask;
@@ -719,6 +728,10 @@ namespace Cliptok
             async Task<Task> Discord_ThreadUpdated(DiscordClient client, ThreadUpdateEventArgs e)
             {
                 client.Logger.LogDebug(eventId: CliptokEventID, $"Thread updated in {e.Guild.Name}. New Thread Name: {e.ThreadAfter.Name}");
+
+                // in case we end up in random guilds
+                if (e.Guild.Id != cfgjson.ServerID)
+                    return Task.CompletedTask;
 
                 if (
                     db.SetContains("openthreads", e.ThreadAfter.Id)
@@ -781,7 +794,8 @@ namespace Cliptok
                     var text = await Program.db.HashGetAsync("deletedMessageReferences", e.Message.Id);
                     if (text.IsNullOrEmpty)
                     {
-                        webhookOut = new DiscordWebhookBuilder().WithContent("I couldn't find any content for that message! This might be a bug?");
+                        discord.Logger.LogError("Failed to find deleted message content for {0}", e.Message.Id);
+                        webhookOut = new DiscordWebhookBuilder().WithContent("I couldn't find any content for that message! This is most likely a bug, please notify my developer!");
                         await e.Interaction.EditOriginalResponseAsync(webhookOut);
                     }
                     else
@@ -796,7 +810,7 @@ namespace Cliptok
                 }
                 else
                 {
-
+                    await e.Interaction.EditOriginalResponseAsync(new DiscordWebhookBuilder().WithContent("Unknown interaction. I don't know what you are asking me for."));
                 }
 
             };
