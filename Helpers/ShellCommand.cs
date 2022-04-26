@@ -1,8 +1,4 @@
-﻿using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-
-namespace Cliptok.Helpers
+﻿namespace Cliptok.Helpers
 {
     internal class ShellCommand
     {
