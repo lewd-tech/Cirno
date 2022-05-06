@@ -2,13 +2,14 @@
 {
     internal class WarningInteractions : ApplicationCommandModule
     {
-        [SlashCommand("warn", "Formally warn a user, usually for breaking the server rules.")]
+        [SlashCommand("warn", "Formally warn a user, usually for breaking the server rules.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        [SlashCommandPermissions(Permissions.ModerateMembers)]
         public async Task WarnSlashCommand(InteractionContext ctx,
-     [Option("user", "The user to warn.")] DiscordUser user,
-     [Option("reason", "The reason they're being warned.")] string reason,
-     [Option("channel", "The channel to warn the user in, implied if not supplied.")] DiscordChannel channel = null
-    )
+         [Option("user", "The user to warn.")] DiscordUser user,
+         [Option("reason", "The reason they're being warned.")] string reason,
+         [Option("channel", "The channel to warn the user in, implied if not supplied.")] DiscordChannel channel = null
+        )
         {
             // Initial response to avoid the 3 second timeout, will edit later.
             var eout = new DiscordInteractionResponseBuilder().AsEphemeral(true);
@@ -52,19 +53,20 @@
 
         [SlashCommand("warnings", "Fetch the warnings for a user.")]
         public async Task WarningsSlashCommand(InteractionContext ctx,
-        [Option("user", "The user to find the warnings for.")] DiscordUser user,
-        [Option("private", "Whether to show the warnings to you privately.")] bool privateWarnings = false
-)
+            [Option("user", "The user to find the warnings for.")] DiscordUser user,
+            [Option("public", "Whether to show the warnings in publiic chat. Do not disrupt chat with this.")] bool publicWarnings = false
+        )
         {
             var eout = new DiscordInteractionResponseBuilder().AddEmbed(WarningHelpers.GenerateWarningsEmbed(user));
-            if (privateWarnings)
+            if (!publicWarnings)
                 eout.AsEphemeral(true);
 
             await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, eout);
         }
 
-        [SlashCommand("transfer_warnings", "Transfer warnings from one user to another.")]
+        [SlashCommand("transfer_warnings", "Transfer warnings from one user to another.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.Moderator)]
+        [SlashCommandPermissions(Permissions.ModerateMembers)]
         public async Task TransferWarningsSlashCommand(InteractionContext ctx,
             [Option("source_user", "The user currently holding the warnings.")] DiscordUser sourceUser,
             [Option("target_user", "The user recieving the warnings.")] DiscordUser targetUser,
