@@ -60,7 +60,8 @@ namespace Cliptok
                 .MinimumLevel.Information()
 #endif
                 .WriteTo.Console(outputTemplate: logFormat, theme: AnsiConsoleTheme.Literate)
-                .WriteTo.TextWriter(outputCapture)
+                .WriteTo.TextWriter(outputCapture, outputTemplate: logFormat)
+                .WriteTo.DiscordSink(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Warning, outputTemplate: logFormat)
                 .CreateLogger();
 
             var logFactory = new LoggerFactory().AddSerilog();
@@ -86,7 +87,7 @@ namespace Cliptok
             if (File.Exists("Lists/usernames.txt"))
                 badUsernames = File.ReadAllLines("Lists/usernames.txt");
             else
-                badUsernames = new string[0];
+                badUsernames = Array.Empty<string>();
 
             avatars = File.ReadAllLines("Lists/avatars.txt");
 
@@ -164,9 +165,16 @@ namespace Cliptok
             foreach (var type in commandClasses)
                 commands.RegisterCommands(type);
 
-            commands.CommandErrored += Events.ErrorEvents.CommandsNextService_CommandErrored;
+            commands.CommandErrored += ErrorEvents.CommandsNextService_CommandErrored;
 
             await discord.ConnectAsync();
+
+            await ReadyEvent.OnStartup(discord);
+
+            if (cfgjson.ErrorLogChannelId == 0)
+                errorLogChannel = await discord.GetChannelAsync(cfgjson.HomeChannel);
+            else
+                errorLogChannel = await discord.GetChannelAsync(cfgjson.ErrorLogChannelId);
 
             // Only wait 3 seconds before the first set of tasks.
             await Task.Delay(3000);
