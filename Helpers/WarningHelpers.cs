@@ -132,10 +132,12 @@
                 screeningForm = await guild.GetMembershipScreeningFormAsync();
                 rules = screeningForm.Fields.FirstOrDefault(field => field.Type is MembershipScreeningFieldType.Terms).Values;
             }
-            catch (DSharpPlus.Exceptions.NotFoundException)
+            catch
             {
                 // thats fine, community must be disabled
             }
+
+            var msg = new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Warning} You were{extraWord}warned in **{guild.Name}**, reason: **{reason}**");
 
             if (screeningForm != default && rules != default)
             {
@@ -173,9 +175,10 @@
 
                     embeds.Add(new DiscordEmbedBuilder().AddField($"Rule {ruleBroken}", ruleText).WithColor(0xFEC13D));
                 }
+                msg.AddEmbeds(embeds.AsEnumerable());
             }
 
-            return new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Warning} You were{extraWord}warned in **{guild.Name}**, reason: **{reason}**").AddEmbeds(embeds.AsEnumerable());
+            return msg;
         }
 
         public static async Task<UserWarning> GiveWarningAsync(DiscordUser targetUser, DiscordUser modUser, string reason, DiscordMessage contextMessage, DiscordChannel channel, string extraWord = " ")
