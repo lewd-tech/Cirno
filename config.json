@@ -159,9 +159,7 @@
   },
   "feedbackHubChannelId": 865734819995582464,
   "dmLogChannelId": 963600228286607391,
-  "errorLogChannelId": 968463420586336286,
-  "mysteryLogChannelId": 974161605938012160,
-  "everyoneFilter": true,
-  "botLogsWebhookEnvVariable": "CLIPTOK_BOTLOGS_WEBHOOK_URL",
-  "usernameAPILogChannel": 984230829343535105
+  "errorLogChannelId": 841747445427732540,
+  "mysteryLogChannelId": 841747445427732540,
+  "everyoneFilter": false
 }
