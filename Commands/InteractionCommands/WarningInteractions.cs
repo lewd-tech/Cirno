@@ -2,13 +2,15 @@
 {
     internal class WarningInteractions : ApplicationCommandModule
     {
-        [SlashCommand("warn", "Formally warn a user, usually for breaking the server rules.")]
+        [SlashCommand("warn", "Formally warn a user, usually for breaking the server rules.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        [SlashCommandPermissions(Permissions.ModerateMembers)]
         public async Task WarnSlashCommand(InteractionContext ctx,
-     [Option("user", "The user to warn.")] DiscordUser user,
-     [Option("reason", "The reason they're being warned.")] string reason,
-     [Option("channel", "The channel to warn the user in, implied if not supplied.")] DiscordChannel channel = null
-    )
+         [Option("user", "The user to warn.")] DiscordUser user,
+         [Option("reason", "The reason they're being warned.")] string reason,
+         [Option("reply_msg_id", "The ID of a message to reply to, must be in the same channel.")] string replyMsgId = "0",
+         [Option("channel", "The channel to warn the user in, implied if not supplied.")] DiscordChannel channel = null
+        )
         {
             // Initial response to avoid the 3 second timeout, will edit later.
             var eout = new DiscordInteractionResponseBuilder().AsEphemeral(true);
@@ -43,31 +45,35 @@
             var messageBuild = new DiscordMessageBuilder()
                 .WithContent($"{Program.cfgjson.Emoji.Warning} {user.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
 
+            if (replyMsgId != "0")
+                messageBuild.WithReply(Convert.ToUInt64(replyMsgId), true, false);
+
             var msg = await channel.SendMessageAsync(messageBuild);
 
-            _ = await WarningHelpers.GiveWarningAsync(user, ctx.User, reason, DiscordHelpers.MessageLink(msg), channel);
+            _ = await WarningHelpers.GiveWarningAsync(user, ctx.User, reason, msg, channel);
             webhookOut = new DiscordWebhookBuilder().WithContent($"{Program.cfgjson.Emoji.Success} User was warned successfully in {channel.Mention}\n[Jump to warning]({DiscordHelpers.MessageLink(msg)})");
             await ctx.EditResponseAsync(webhookOut);
         }
 
         [SlashCommand("warnings", "Fetch the warnings for a user.")]
         public async Task WarningsSlashCommand(InteractionContext ctx,
-        [Option("user", "The user to find the warnings for.")] DiscordUser user,
-        [Option("private", "Whether to show the warnings to you privately.")] bool privateWarnings = false
-)
+            [Option("user", "The user to find the warnings for.")] DiscordUser user,
+            [Option("public", "Whether to show the warnings in public chat. Do not disrupt chat with this.")] bool publicWarnings = false
+        )
         {
             var eout = new DiscordInteractionResponseBuilder().AddEmbed(WarningHelpers.GenerateWarningsEmbed(user));
-            if (privateWarnings)
+            if (!publicWarnings)
                 eout.AsEphemeral(true);
 
             await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, eout);
         }
 
-        [SlashCommand("transfer_warnings", "Transfer warnings from one user to another.")]
+        [SlashCommand("transfer_warnings", "Transfer warnings from one user to another.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.Moderator)]
+        [SlashCommandPermissions(Permissions.ModerateMembers)]
         public async Task TransferWarningsSlashCommand(InteractionContext ctx,
             [Option("source_user", "The user currently holding the warnings.")] DiscordUser sourceUser,
-            [Option("target_user", "The user recieving the warnings.")] DiscordUser targetUser,
+            [Option("target_user", "The user receiving the warnings.")] DiscordUser targetUser,
             [Option("merge", "Whether to merge the source user's warnings and the target user's warnings.")] bool merge = false,
             [Option("force_override", "DESTRUCTIVE OPERATION: Whether to OVERRIDE and DELETE the target users existing warnings.")] bool forceOverride = false
         )
@@ -110,7 +116,7 @@
                 operationText = "merge ";
             else if (forceOverride)
                 operationText = "force ";
-            await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successully {operationText}transferred warnings from {sourceUser.Mention} to {targetUser.Mention}!");
+            await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successfully {operationText}transferred warnings from {sourceUser.Mention} to {targetUser.Mention}!");
             await Program.logChannel.SendMessageAsync(
                 new DiscordMessageBuilder()
                     .WithContent($"{Program.cfgjson.Emoji.Information} Warnings from {sourceUser.Mention} were {operationText}transferred to {targetUser.Mention} by `{ctx.User.Username}#{ctx.User.Discriminator}`")

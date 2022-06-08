@@ -43,7 +43,7 @@
 
             if (finishedShell.proc.ExitCode != 0)
             {
-                await msg.ModifyAsync($"{Program.cfgjson.Emoji.Error} An error ocurred trying to update private lists!\n```\n{result}\n```");
+                await msg.ModifyAsync($"{Program.cfgjson.Emoji.Error} An error occurred trying to update private lists!\n```\n{result}\n```");
             }
             else
             {
@@ -140,22 +140,9 @@
             var urlMatches = Constants.RegexConstants.url_rx.Matches(content);
             if (urlMatches.Count > 0 && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != null && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != "useyourimagination")
             {
-                HttpRequestMessage request = new(HttpMethod.Post, Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT"));
-                request.Headers.Add("User-Agent", "Cliptok (https://github.com/Erisa/Cliptok)");
-                MessageEvent.httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                var (match, httpStatus, responseText, _) = await APIs.PhishingAPI.PhishingAPICheckAsync(content);
 
-                var bodyObject = new PhishingRequestBody()
-                {
-                    Message = content
-                };
-
-                request.Content = new StringContent(JsonConvert.SerializeObject(bodyObject), Encoding.UTF8, "application/json");
-
-                HttpResponseMessage response = await Program.httpClient.SendAsync(request);
-
-                var (match, httpStatus, responseText, phishingResponse) = await APIs.PhishingAPI.PhishingAPICheckAsync(content);
-
-                string responseToSend = "";
+                string responseToSend;
                 if (match)
                 {
                     responseToSend = $"Match found:\n```json\n{responseText}\n```";
@@ -163,7 +150,7 @@
                 }
                 else
                 {
-                    responseToSend = $"No valid match found.\nHTTP Status `{httpStatus}, result:\n```json\n{responseText}\n```";
+                    responseToSend = $"No valid match found.\nHTTP Status `{(int)httpStatus}`, result:\n```json\n{responseText}\n```";
                 }
 
                 if (responseToSend.Length > 1940)

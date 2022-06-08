@@ -48,7 +48,7 @@ namespace Cliptok.Commands
                 messageBuild.WithReply(reply.Id, true, false);
 
             var msg = await ctx.Channel.SendMessageAsync(messageBuild);
-            _ = await GiveWarningAsync(targetUser, ctx.User, reason, DiscordHelpers.MessageLink(msg), ctx.Channel);
+            _ = await GiveWarningAsync(targetUser, ctx.User, reason, msg, ctx.Channel);
         }
 
         [
@@ -87,7 +87,7 @@ namespace Cliptok.Commands
             }
             DiscordMessage msg = await targetChannel.SendMessageAsync($"{Program.cfgjson.Emoji.Warning} {targetUser.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
             await ctx.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Warning} {targetUser.Mention} was warned in {targetChannel.Mention}: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
-            _ = await GiveWarningAsync(targetUser, ctx.User, reason, DiscordHelpers.MessageLink(msg), ctx.Channel);
+            _ = await GiveWarningAsync(targetUser, ctx.User, reason, msg, ctx.Channel);
         }
 
         [
@@ -128,7 +128,7 @@ namespace Cliptok.Commands
             }
             else
             {
-                bool success = DelWarning(warning, targetUser.Id);
+                bool success = await DelWarningAsync(warning, targetUser.Id);
                 if (success)
                 {
                     await ctx.RespondAsync($"{Program.cfgjson.Emoji.Deleted} Successfully deleted warning `{StringHelpers.Pad(warnId)}` (belonging to {targetUser.Mention})");
@@ -219,7 +219,7 @@ namespace Cliptok.Commands
             }
             else
             {
-                EditWarning(targetUser, warnId, ctx.User, newReason);
+                await EditWarning(targetUser, warnId, ctx.User, newReason);
                 await msg.ModifyAsync($"{Program.cfgjson.Emoji.Information} Successfully edited warning `{StringHelpers.Pad(warnId)}` (belonging to {targetUser.Mention})",
                     await FancyWarnEmbedAsync(GetWarning(targetUser.Id, warnId), userID: targetUser.Id));
 
@@ -261,6 +261,74 @@ namespace Cliptok.Commands
 
             var user = await ctx.Client.GetUserAsync(Convert.ToUInt64(myList.Last().Key));
             await ctx.RespondAsync($":thinking: The user with the most warnings is **{user.Username}#{user.Discriminator}** with a total of **{myList.Last().Value} warnings!**\nThis includes users who have left or been banned.");
+        }
+
+        [Command("mostwarningsday"), Description("Which day has the most warnings???")]
+        [RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
+        public async Task MostWarningsDayCmd(CommandContext ctx)
+        {
+            await DiscordHelpers.SafeTyping(ctx.Channel);
+
+            var server = Program.redis.GetServer(Program.redis.GetEndPoints()[0]);
+            var keys = server.Keys();
+
+            Dictionary<string, int> counts = new();
+            Dictionary<string, int> noAutoCounts = new();
+
+            foreach (var key in keys)
+            {
+                if (ulong.TryParse(key.ToString(), out ulong number))
+                {
+                    var warningsOutput = Program.db.HashGetAll(key.ToString()).ToDictionary(
+                        x => x.Name.ToString(),
+                        x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
+                    );
+                    
+                    foreach(var warning in warningsOutput)
+                    {
+                        var day = warning.Value.WarnTimestamp.ToString("yyyy-MM-dd");
+                        if (!counts.ContainsKey(day))
+                        {
+                            counts[day] = 1;
+                        } else
+                        {
+                            counts[day] += 1;
+                        }
+                        if (warning.Value.ModUserId != 159985870458322944 && warning.Value.ModUserId != Program.discord.CurrentUser.Id)
+                        {
+                            if (!noAutoCounts.ContainsKey(day))
+                            {
+                                noAutoCounts[day] = 1;
+                            }
+                            else
+                            {
+                                noAutoCounts[day] += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            List<KeyValuePair<string, int>> countList = counts.ToList();
+            countList.Sort(
+                delegate (KeyValuePair<string, int> pair1,
+                KeyValuePair<string, int> pair2)
+                {
+                    return pair1.Value.CompareTo(pair2.Value);
+                }
+            );
+
+            List<KeyValuePair<string, int>> noAutoCountList = noAutoCounts.ToList();
+            noAutoCountList.Sort(
+                delegate (KeyValuePair<string, int> pair1,
+                KeyValuePair<string, int> pair2)
+                {
+                    return pair1.Value.CompareTo(pair2.Value);
+                }
+            );
+
+            await ctx.RespondAsync($":thinking: As far as I can tell, the day with the most warnings issued was **{countList.Last().Key}** with a total of **{countList.Last().Value} warnings!**" +
+                $"\nExcluding automatic warnings, the most was on **{noAutoCountList.Last().Key}** with a total of **{noAutoCountList.Last().Value}** warnings!");
         }
     }
 }

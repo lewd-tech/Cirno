@@ -29,6 +29,8 @@ namespace Cliptok
         public static DiscordChannel userLogChannel;
         public static DiscordChannel badMsgLog;
         public static DiscordChannel errorLogChannel;
+        public static DiscordChannel mysteryLogChannel;
+        public static DiscordChannel usernameAPILogChannel;
         public static DiscordGuild homeGuild;
 
         public static Random rand = new();
@@ -55,12 +57,14 @@ namespace Cliptok
             Log.Logger = new LoggerConfiguration()
 #if DEBUG
                 .MinimumLevel.Debug()
+                .Filter.ByExcluding("Contains(@m, 'Unknown event:')")
 #else
                 .Filter.ByExcluding("Contains(@m, 'Unknown event:')")
                 .MinimumLevel.Information()
 #endif
                 .WriteTo.Console(outputTemplate: logFormat, theme: AnsiConsoleTheme.Literate)
-                .WriteTo.TextWriter(outputCapture)
+                .WriteTo.TextWriter(outputCapture, outputTemplate: logFormat)
+                .WriteTo.DiscordSink(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Warning, outputTemplate: logFormat)
                 .CreateLogger();
 
             var logFactory = new LoggerFactory().AddSerilog();
@@ -86,7 +90,7 @@ namespace Cliptok
             if (File.Exists("Lists/usernames.txt"))
                 badUsernames = File.ReadAllLines("Lists/usernames.txt");
             else
-                badUsernames = new string[0];
+                badUsernames = Array.Empty<string>();
 
             avatars = File.ReadAllLines("Lists/avatars.txt");
 
@@ -122,7 +126,7 @@ namespace Cliptok
                 MinimumLogLevel = LogLevel.Information,
 #endif
                 LoggerFactory = logFactory,
-                Intents = DiscordIntents.All
+                Intents = DiscordIntents.All + 3145728
             });
 
             if (Environment.GetEnvironmentVariable("CLIPTOK_GITHUB_TOKEN") == null || Environment.GetEnvironmentVariable("CLIPTOK_GITHUB_TOKEN") == "githubtokenhere")
@@ -164,9 +168,16 @@ namespace Cliptok
             foreach (var type in commandClasses)
                 commands.RegisterCommands(type);
 
-            commands.CommandErrored += Events.ErrorEvents.CommandsNextService_CommandErrored;
+            commands.CommandErrored += ErrorEvents.CommandsNextService_CommandErrored;
 
             await discord.ConnectAsync();
+
+            await ReadyEvent.OnStartup(discord);
+
+            if (cfgjson.ErrorLogChannelId == 0)
+                errorLogChannel = await discord.GetChannelAsync(cfgjson.HomeChannel);
+            else
+                errorLogChannel = await discord.GetChannelAsync(cfgjson.ErrorLogChannelId);
 
             // Only wait 3 seconds before the first set of tasks.
             await Task.Delay(3000);
@@ -187,7 +198,7 @@ namespace Cliptok
                 }
                 catch (Exception e)
                 {
-                    discord.Logger.LogError(CliptokEventID, "An Error ocurred during task runs: {message}", e.ToString());
+                    discord.Logger.LogError(CliptokEventID, "An Error occurred during task runs: {message}", e.ToString());
                 }
                 await Task.Delay(10000);
             }

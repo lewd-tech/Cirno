@@ -2,6 +2,7 @@
 
 namespace Cliptok.Helpers
 {
+
     public class ScamHelpers
     {
         public static async Task<bool> UsernameCheckAsync(DiscordMember member)
@@ -10,10 +11,52 @@ namespace Cliptok.Helpers
             if (db.HashExists("unbanned", member.Id))
                 return false;
 
+            if (cfgjson.UsernameAPILogChannel != 0 && Environment.GetEnvironmentVariable("USERNAME_CHECK_ENDPOINT") != null)
+            {
+                if (db.SetContains("safeusernamestore", member.Username))
+                {
+                    discord.Logger.LogDebug("Unnecessary username check skipped for {member}", member.Username);
+                } else
+                {
+                    var apiResult = await APIs.UsernameAPI.UsernameAPICheckAsync(member.Username);
+
+                    if (apiResult.statusCode == HttpStatusCode.OK)
+                    {
+                        if (apiResult.match)
+                        {
+                            discord.Logger.LogDebug("Experimental Username check for {member}: {status} {response}", member.Username, apiResult.statusCode, apiResult.responseString);
+                            var embed = new DiscordEmbedBuilder()
+                                .WithTimestamp(DateTime.Now)
+                                .WithFooter($"User ID: {member.Id}", null)
+                                .WithAuthor($"{member.Username}#{member.Discriminator}", null, member.AvatarUrl)
+                                .AddField("Infringing name", member.Username)
+                                .AddField("API Response", $"```json\n{apiResult.responseString}\n```")
+                                .WithColor(new DiscordColor(0xf03916));
+                            var investigations = await discord.GetChannelAsync(cfgjson.InvestigationsChannelId);
+                            await usernameAPILogChannel.SendMessageAsync($"{cfgjson.Emoji.Warning} {member.Mention} was flagged by the experimental username API.", embed);
+                        }
+                        else
+                        {
+                            discord.Logger.LogDebug("Experimental Username check for {member}: {status} {response}", member.Username, apiResult.statusCode, apiResult.responseString);
+                            await db.SetAddAsync("safeusernamestore", member.Username);
+                        }
+                    }
+                    else if (apiResult.statusCode != HttpStatusCode.OK)
+                    {
+                        discord.Logger.LogError("Experimental username check for {member}: {status} {response}", member.Username, (int)apiResult.statusCode, apiResult.responseString);
+                    }
+                    else
+                    {
+                        discord.Logger.LogDebug("Experimental Username check for {member}: {status} {response}", member.Username, apiResult.statusCode, apiResult.responseString);
+                    }
+                }
+            }
+
             bool result = false;
 
             foreach (var username in badUsernames)
             {
+
                 // emergency failsafe, for newlines and other mistaken entries
                 if (username.Length < 4)
                     continue;
@@ -52,7 +95,7 @@ namespace Cliptok.Helpers
             if (member.GuildAvatarHash == null && member.AvatarHash == null)
                 return false;
 
-            // turns out checking guild avatars isnt important
+            // turns out checking guild avatars isn't important
 
             //               if (member.GuildAvatarHash != null)
             //               {
@@ -69,7 +112,7 @@ namespace Cliptok.Helpers
 
             if (db.SetContains("safeavatarstore", usedHash))
             {
-                discord.Logger.LogDebug("Unnecessary avatar check skipped for " + member.Id);
+                discord.Logger.LogDebug("Unnecessary avatar check skipped for {member}", member.Id);
                 return false;
             }
 
@@ -77,7 +120,7 @@ namespace Cliptok.Helpers
 
             if (httpStatus == HttpStatusCode.OK && avatarResponse is not null)
             {
-                discord.Logger.LogDebug($"Avatar check for {member.Id}: {httpStatus} {httpStatus}");
+                discord.Logger.LogDebug("Avatar check for {member}: {status} {response}", member.Id, httpStatus, responseString);
 
                 if (avatarResponse.Matched && avatarResponse.Key != "logo")
                 {
@@ -99,7 +142,7 @@ namespace Cliptok.Helpers
             }
             else
             {
-                discord.Logger.LogError($"Avatar check for {member.Id}: {httpStatus} {responseString}");
+                discord.Logger.LogError("Avatar check for {member}: {status} {response}", member.Id, httpStatus, responseString);
             }
 
             return false;
