@@ -2,6 +2,27 @@
 {
     internal class Lists : BaseCommandModule
     {
+        public class GitHubDispatchBody
+        {
+            [JsonProperty("ref")]
+            public string Ref { get; set; }
+
+            [JsonProperty("inputs")]
+            public GitHubDispatchInputs Inputs { get; set; }
+        }
+
+        public class GitHubDispatchInputs
+        {
+            [JsonProperty("file")]
+            public string File { get; set; }
+
+            [JsonProperty("text")]
+            public string Text { get; set; }
+
+            [JsonProperty("user")]
+            public string User { get; set; }
+        }
+
         [Command("listupdate")]
         [Description("Updates the private lists from the GitHub repository, then reloads them into memory.")]
         [RequireHomeserverPerm(ServerPermLevel.Moderator)]
@@ -116,15 +137,42 @@
         [RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
         public async Task ScamCheck(CommandContext ctx, [RemainingText, Description("Domain or message content to scan.")] string content)
         {
-            var result = await Program.PhishChecker.IsPhishing(content);
-
-            if (result)
+            var urlMatches = Constants.RegexConstants.url_rx.Matches(content);
+            if (urlMatches.Count > 0 && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != null && Environment.GetEnvironmentVariable("CLIPTOK_ANTIPHISHING_ENDPOINT") != "useyourimagination")
             {
-                await ctx.RespondAsync("A phishing domain match was found in this message!");
+                var (match, httpStatus, responseText, _) = await APIs.PhishingAPI.PhishingAPICheckAsync(content);
+
+                string responseToSend;
+                if (match)
+                {
+                    responseToSend = $"Match found:\n```json\n{responseText}\n```";
+
+                }
+                else
+                {
+                    responseToSend = $"No valid match found.\nHTTP Status `{(int)httpStatus}`, result:\n```json\n{responseText}\n```";
+                }
+
+                if (responseToSend.Length > 1940)
+                {
+                    try
+                    {
+                        HasteBinResult hasteURL = await Program.hasteUploader.Post(responseText);
+                        if (hasteURL.IsSuccess)
+                            responseToSend = hasteURL.FullUrl + ".json";
+                        else
+                            responseToSend = "Response was too big and Hastebin failed, sorry.";
+                    }
+                    catch
+                    {
+                        responseToSend = "Response was too big and Hastebin failed, sorry.";
+                    }
+                }
+                await ctx.RespondAsync(responseToSend);
             }
             else
             {
-                await ctx.RespondAsync("There was no match...");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Anti-phishing API is not configured, nothing for me to do.");
             }
         }
 
