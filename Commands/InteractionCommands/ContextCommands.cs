@@ -22,7 +22,7 @@
         [ContextMenu(ApplicationCommandType.UserContextMenu, "Show Warnings")]
         public async Task ContextWarnings(ContextMenuContext ctx)
         {
-            await ctx.RespondAsync(embed: WarningHelpers.GenerateWarningsEmbed(ctx.TargetUser), ephemeral: true);
+            await ctx.RespondAsync(embed: await WarningHelpers.GenerateWarningsEmbedAsync(ctx.TargetUser), ephemeral: true);
         }
 
         [ContextMenu(ApplicationCommandType.UserContextMenu, "User Information")]
@@ -59,8 +59,15 @@
             {
                 rolesStr = "";
 
+                string truncatedComment = "\n(Truncated. User has an obscene amount of roles.)";
+
                 foreach (DiscordRole role in member.Roles.OrderBy(x => x.Position).Reverse())
                 {
+                    if (rolesStr.Length + (role.Mention.Length +1) > (1024 - truncatedComment.Length))
+                    {
+                        rolesStr += truncatedComment;
+                        break;
+                    }
                     rolesStr += role.Mention + " ";
                 }
             }

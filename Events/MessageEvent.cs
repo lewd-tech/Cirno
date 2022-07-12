@@ -70,7 +70,7 @@ namespace Cliptok.Events
                     DiscordRole muted = message.Channel.Guild.GetRole(Program.cfgjson.MutedRole);
                     if (modmailMember.Roles.Contains(muted))
                     {
-                        await channel.SendMessageAsync(null, WarningHelpers.GenerateWarningsEmbed(modmailMember));
+                        await channel.SendMessageAsync(null, await WarningHelpers.GenerateWarningsEmbedAsync(modmailMember));
                     }
                 }
 
@@ -110,7 +110,12 @@ namespace Cliptok.Events
                     if (message.MentionedUsers.Count > Program.cfgjson.MassMentionBanThreshold)
                     {
                         _ = message.DeleteAsync();
-                        await channel.Guild.BanMemberAsync(message.Author.Id, 7, $"Mentioned more than {Program.cfgjson.MassMentionBanThreshold} users in one message.");
+                        _ = channel.Guild.BanMemberAsync(message.Author.Id, 7, $"Mentioned more than {Program.cfgjson.MassMentionBanThreshold} users in one message.");
+                        string content = $"{Program.cfgjson.Emoji.Banned} {message.Author.Mention} was automatically banned for mentioning **{message.MentionedUsers.Count}** users.";
+                        var chatMsg = await channel.SendMessageAsync(content);
+                        _ = InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content);
+                        _ = InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content);
+                        return;
                     }
 
                     bool match = false;
@@ -249,7 +254,7 @@ namespace Cliptok.Events
                             {
                                 tempArray[pos] = ' ';
                             }
-                            if (c == '\u200d')
+                            if (c == '\u200d' && pos + 1 < tempArray.Length)
                             {
                                 tempArray[pos] = ' ';
                                 tempArray[pos + 1] = ' ';
