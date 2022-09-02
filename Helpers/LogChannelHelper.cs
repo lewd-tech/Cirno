@@ -7,8 +7,8 @@
         }
     }
 
-        public class LogChannelHelper
-    {        
+    public class LogChannelHelper
+    {
         internal static Dictionary<string, DiscordChannel> ChannelCache = new();
         internal static Dictionary<string, DiscordWebhookClient> WebhookCache = new();
         public static bool ready = false;
@@ -27,7 +27,7 @@
                 { "secret", config.MysteryLogChannelId },
                 { "username", config.UsernameAPILogChannel}
             };
-            
+
             if (config.LogChannels != null)
             {
                 foreach (KeyValuePair<string, LogChannelConfig> logChannel in config.LogChannels)
@@ -54,7 +54,8 @@
 
             foreach (KeyValuePair<string, ulong> migration in MigrationMapping)
             {
-                if (migration.Value!= 0 && !ChannelCache.ContainsKey(migration.Key)) {
+                if (migration.Value != 0 && !ChannelCache.ContainsKey(migration.Key))
+                {
                     var channel = await Program.discord.GetChannelAsync(migration.Value);
                     ChannelCache.Add(migration.Key, channel);
                 }
@@ -103,13 +104,30 @@
                 {
                     throw new LogChannelNotFoundException($"A valid log channel for key '{key}' was not found!");
                 }
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 Program.discord.Logger.LogError(ex, "Error ocurred trying to send message to key {key}", key);
                 return null;
             }
         }
 
+        public static async Task<DiscordMessage> LogDeletedMessagesAsync(string key, string content, List<DiscordMessage> messages, DiscordChannel channel)
+        {
+            string messageLog = await DiscordHelpers.CompileMessagesAsync(messages.AsEnumerable().Reverse().ToList(), channel);
+
+            var stream = new MemoryStream(Encoding.UTF8.GetBytes(messageLog));
+            var msg = new DiscordMessageBuilder().WithContent(content).WithFile("messages.txt", stream);
+
+            var hasteResult = await Program.hasteUploader.Post(messageLog);
+
+            if (hasteResult.IsSuccess)
+            {
+                msg.WithEmbed(new DiscordEmbedBuilder().WithDescription($"[`📄 View online`]({Program.cfgjson.HastebinEndpoint}/raw/{hasteResult.Key})"));
+            }
+
+            return await LogMessageAsync(key, msg);
+        }
 
         internal static async Task<DiscordMessage> FireWebhookFromMessageAsync(DiscordWebhookClient webhook, DiscordMessageBuilder message, string key)
         {
@@ -137,7 +155,7 @@
 
             if (ChannelCache.ContainsKey(key) && ChannelCache[key].IsThread)
                 webhookBuilder.WithThreadId(ChannelCache[key].Id);
-            
+
             var webhookResults = await webhook.BroadcastMessageAsync(webhookBuilder);
 
             return webhookResults.FirstOrDefault().Value;

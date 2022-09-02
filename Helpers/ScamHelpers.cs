@@ -16,7 +16,8 @@ namespace Cliptok.Helpers
                 if (db.SetContains("safeusernamestore", member.Username))
                 {
                     discord.Logger.LogDebug("Unnecessary username check skipped for {member}", member.Username);
-                } else
+                }
+                else
                 {
                     var apiResult = await APIs.UsernameAPI.UsernameAPICheckAsync(member.Username);
 
@@ -122,7 +123,7 @@ namespace Cliptok.Helpers
             {
                 discord.Logger.LogDebug("Avatar check for {member}: {status} {response}", member.Id, httpStatus, responseString);
 
-                if (avatarResponse.Matched && avatarResponse.Key != "logo")
+                if (avatarResponse.Matched && avatarResponse.Key != "logo" && avatarResponse.Key != "clyde")
                 {
                     var embed = new DiscordEmbedBuilder()
                         .WithDescription($"API Response:\n```json\n{responseString}\n```")

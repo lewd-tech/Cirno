@@ -7,7 +7,7 @@
         [SlashCommand("clear", "Delete many messages from the current channel.", defaultPermission: false)]
         [HomeServer, SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), RequireBotPermissions(Permissions.ManageMessages), SlashCommandPermissions(Permissions.ModerateMembers)]
         public async Task ClearSlashCommand(InteractionContext ctx,
-            [Option("count", "The number of messages to consider for deletion. Required if you don't use the 'upto' argument.")] long count = 0,
+            [Option("count", "The number of messages to consider for deletion. Required if you don't use the 'up_to' argument.")] long count = 0,
             [Option("up_to", "Optionally delete messages up to (not including) this one. Accepts IDs and links.")] string upTo = "",
             [Option("user", "Optionally filter the deletion to a specific user.")] DiscordUser user = default,
             [Option("ignore_mods", "Optionally filter the deletion to only messages sent by users who are not Moderators.")] bool ignoreMods = false,
@@ -55,7 +55,7 @@
                 return;
             }
 
-            List<DiscordMessage> messagesToClear;
+            List<DiscordMessage> messagesToClear = new();
             if (upTo == "")
             {
                 var messages = await ctx.Channel.GetMessagesAsync((int)count);
@@ -89,8 +89,17 @@
                 message = await ctx.Channel.GetMessageAsync(messageId);
 
                 // List of messages to delete, up to (not including) the one we just got.
-                var messages = await ctx.Channel.GetMessagesAfterAsync(message.Id);
-                messagesToClear = messages.ToList();
+                var firstMsg = (await ctx.Channel.GetMessagesAfterAsync(message.Id, 1))[0];
+                var firstMsgId = firstMsg.Id;
+                messagesToClear.Add(firstMsg);
+                while (true)
+                {
+                    var newMessages = (await ctx.Channel.GetMessagesAfterAsync(firstMsgId, 100)).ToList();
+                    messagesToClear.AddRange(newMessages);
+                    firstMsgId = newMessages.First().Id;
+                    if (newMessages.Count < 100)
+                        break;
+                }
             }
 
             // Now we know how many messages we'll be looking through and we won't be refusing the request. Time to check filters.
@@ -255,6 +264,14 @@
                 {
                     await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} There were no messages that matched all of the arguments you provided! Nothing to do."));
                 }
+
+                await LogChannelHelper.LogDeletedMessagesAsync(
+                    "messages",
+                    $"{Program.cfgjson.Emoji.Deleted} **{messagesToClear.Count}** messages were cleared from {ctx.Channel.Mention} by {ctx.User.Mention}.",
+                    messagesToClear,
+                    ctx.Channel
+                );
+
             }
         }
     }

@@ -92,7 +92,14 @@
             var channel = matchPair.Value;
 
             if (channel != default)
-                await channel.SendMessageAsync(messageToSend);
+            {
+                DiscordMessageBuilder message = new()
+                {
+                    Content = messageToSend
+                };
+                await channel.SendMessageAsync(message.WithAllowedMentions(Mentions.None));
+
+            }
         }
 
 
@@ -128,7 +135,7 @@
                 Program.discord.Logger.LogError(Program.CliptokEventID, e, "An exception occurred while unbanning {user}", target.Id);
                 return false;
             }
-            await LogChannelHelper.LogMessageAsync("mod",new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Unbanned} Successfully unbanned {target.Mention}!").WithAllowedMentions(Mentions.None));
+            await LogChannelHelper.LogMessageAsync("mod", new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Unbanned} Successfully unbanned {target.Mention}!").WithAllowedMentions(Mentions.None));
             await Program.db.HashDeleteAsync("bans", target.Id.ToString());
             return true;
         }

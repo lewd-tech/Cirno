@@ -34,6 +34,8 @@ namespace Cliptok
 
         static public readonly HttpClient httpClient = new();
 
+        public static List<ServerApiResponseJson> serverApiList = new();
+
         public static void UpdateLists()
         {
             foreach (var list in cfgjson.WordListList)
@@ -45,15 +47,15 @@ namespace Cliptok
 
         static async Task Main(string[] _)
         {
+            Console.OutputEncoding = Encoding.UTF8;
+
             httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             var logFormat = "[{Timestamp:yyyy-MM-dd HH:mm:ss zzz}] [{Level}] {Message}{NewLine}{Exception}";
 
             Log.Logger = new LoggerConfiguration()
 #if DEBUG
                 .MinimumLevel.Debug()
-                .Filter.ByExcluding("Contains(@m, 'Unknown event:')")
 #else
-                .Filter.ByExcluding("Contains(@m, 'Unknown event:')")
                 .MinimumLevel.Information()
 #endif
                 .WriteTo.Console(outputTemplate: logFormat, theme: AnsiConsoleTheme.Literate)
@@ -120,7 +122,8 @@ namespace Cliptok
                 MinimumLogLevel = LogLevel.Information,
 #endif
                 LoggerFactory = logFactory,
-                Intents = DiscordIntents.All + 3145728
+                Intents = DiscordIntents.All + 3145728,
+                LogUnknownEvents = false
             });
 
             var slash = discord.UseSlashCommands();
@@ -147,6 +150,10 @@ namespace Cliptok
             discord.ThreadMemberUpdated += ThreadEvents.Discord_ThreadMemberUpdated;
             discord.ThreadMembersUpdated += ThreadEvents.Discord_ThreadMembersUpdated;
 
+            discord.GuildBanRemoved += UnbanEvent.OnUnban;
+
+            discord.VoiceStateUpdated += VoiceEvents.VoiceStateUpdate;
+
             commands = discord.UseCommandsNext(new CommandsNextConfiguration
             {
                 StringPrefixes = cfgjson.Core.Prefixes
@@ -164,6 +171,7 @@ namespace Cliptok
 
             // Only wait 3 seconds before the first set of tasks.
             await Task.Delay(3000);
+            int loopCount = 0;
             while (true)
             {
                 try
@@ -182,6 +190,18 @@ namespace Cliptok
                 catch (Exception e)
                 {
                     discord.Logger.LogError(CliptokEventID, "An Error occurred during task runs: {message}", e.ToString());
+                }
+
+                // after 180 cycles, roughly 30 minutes has passed
+                if (loopCount == 180)
+                {
+                    var fetchResult = await APIs.ServerAPI.FetchMaliciousServersList();
+                    if (fetchResult is not null)
+                    {
+                        serverApiList = fetchResult;
+                        discord.Logger.LogDebug("Successfully updated malicious invite list with {count} servers.", fetchResult.Count);
+                    }
+                    loopCount = 0;
                 }
                 await Task.Delay(10000);
             }

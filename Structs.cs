@@ -219,7 +219,7 @@
         public WorkflowConfig GitHubWorkFlow { get; private set; }
 
         [JsonProperty("everyoneExcludedChannels")]
-        public List<ulong> EveryoneExcludedChannels { get; private set; }
+        public List<ulong> EveryoneExcludedChannels { get; private set; } = new();
 
         [JsonProperty("gitListDirectory")]
         public string GitListDirectory { get; private set; }
@@ -247,6 +247,25 @@
 
         [JsonProperty("botOwners")]
         public List<ulong> BotOwners { get; private set; } = new();
+
+        [JsonProperty("ignoredVoiceChannels")]
+        public List<ulong> IgnoredVoiceChannels { get; private set; } = new();
+
+        [JsonProperty("enableTextInVoice")]
+        public bool EnableTextInVoice { get; private set; } = false;
+
+        [JsonProperty("tqsRoleId")]
+        public ulong TqsRoleId { get; private set; } = 0;
+
+        [JsonProperty("supportForumIntroThreadId")]
+        public ulong SupportForumIntroThreadId { get; private set; } = 0;
+
+
+        [JsonProperty("supportForumId")]
+        public ulong SupportForumId { get; private set; } = 0;
+
+        [JsonProperty("everyoneExcludedRoles")]
+        public List<ulong> EveryoneExcludedRoles { get; private set; } = new();
     }
 
     public class LogChannelConfig
@@ -486,5 +505,29 @@
         public string Reason { get; set; }
     }
 
+    [JsonObject(ItemNullValueHandling = NullValueHandling.Ignore)]
+    public class ServerApiResponseJson
+    {
+        [JsonProperty("serverID")]
+        public string ServerID { get; set; }
+
+        [JsonProperty("match")]
+        public bool Match { get; set; } = true;
+
+        [JsonProperty("reason")]
+        public string Reason { get; set; }
+
+        [JsonProperty("key")]
+        public string Key { get; set; }
+
+        [JsonProperty("vanity")]
+        public string Vanity { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("invite")]
+        public string Invite { get; set; }
+    }
 
 }

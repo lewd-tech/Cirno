@@ -42,7 +42,7 @@ namespace Cliptok.Commands
             }
 
             var messageBuild = new DiscordMessageBuilder()
-                .WithContent($"{Program.cfgjson.Emoji.Warning} {targetUser.Mention} was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
+                .WithContent($"{Program.cfgjson.Emoji.Warning} <@{targetUser.Id}> was warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
 
             if (reply != null)
                 messageBuild.WithReply(reply.Id, true, false);
@@ -283,14 +283,15 @@ namespace Cliptok.Commands
                         x => x.Name.ToString(),
                         x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
                     );
-                    
-                    foreach(var warning in warningsOutput)
+
+                    foreach (var warning in warningsOutput)
                     {
                         var day = warning.Value.WarnTimestamp.ToString("yyyy-MM-dd");
                         if (!counts.ContainsKey(day))
                         {
                             counts[day] = 1;
-                        } else
+                        }
+                        else
                         {
                             counts[day] += 1;
                         }

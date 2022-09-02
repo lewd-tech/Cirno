@@ -10,6 +10,13 @@ namespace Cliptok.Events
             {
                 homeGuild = await discord.GetGuildAsync(cfgjson.ServerID);
                 await LogChannelHelper.UnpackLogConfigAsync(cfgjson);
+                var fetchResult = await APIs.ServerAPI.FetchMaliciousServersList();
+                if (fetchResult is not null)
+                {
+                    serverApiList = fetchResult;
+                    client.Logger.LogDebug("Successfully initalised malicious invite list with {count} servers.", fetchResult.Count);
+                }
+
                 client.Logger.LogInformation(CliptokEventID, "Logged in as {user}", $"{client.CurrentUser.Username}#{client.CurrentUser.Discriminator}");
             });
         }

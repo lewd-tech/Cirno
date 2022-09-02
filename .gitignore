@@ -1,3 +1,4 @@
+Properties/*
 config.*.json
 .env
 *.env
