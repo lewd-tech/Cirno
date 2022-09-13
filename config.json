@@ -182,6 +182,12 @@
     },
     "username": {
       "channelId": 751545758292901898
+    },
+    "messages": {
+      "channeelId": 751545758292901898
+    },
+    "mentions": {
+      "channelId": 1015235861174046742
     }
   },
   "botOwners": [

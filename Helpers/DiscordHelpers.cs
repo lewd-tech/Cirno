@@ -143,5 +143,57 @@
             return embed;
         }
 
+        public static async Task<DiscordMessageBuilder> GenerateMessageRelay(DiscordMessage message, bool jumplink = false, bool channelRef = false, bool showChannelId = true)
+        {
+            DiscordEmbedBuilder embed = new DiscordEmbedBuilder()
+                .WithAuthor($"{message.Author.Username}#{message.Author.Discriminator}{(channelRef ? $" in #{message.Channel.Name}" : "")}", null, message.Author.AvatarUrl)
+                .WithDescription(message.Content)
+                .WithFooter($"{(showChannelId ? $"Channel ID: {message.Channel.Id} | " : "")}User ID: {message.Author.Id}");
+
+            if (message.Stickers.Count > 0)
+            {
+                foreach (var sticker in message.Stickers)
+                {
+                    string fieldValue = $"[{sticker.Name}]({sticker.StickerUrl})";
+                    if (sticker.FormatType is StickerFormat.APNG or StickerFormat.LOTTIE)
+                    {
+                        fieldValue += " (Animated)";
+                    }
+
+                    embed.AddField($"Sticker", fieldValue);
+
+                    if (message.Attachments.Count == 0 && message.Stickers.Count == 1)
+                    {
+                        embed.WithImageUrl(sticker.StickerUrl);
+                    }
+                }
+            }
+
+            if (message.Attachments.Count > 0)
+                embed.WithImageUrl(message.Attachments[0].Url)
+                    .AddField($"Attachment", $"[{message.Attachments[0].FileName}]({message.Attachments[0].Url})");
+
+            if (jumplink)
+                embed.AddField("Message Link", $"[`Jump to message`]({message.JumpLink})");
+
+            List<DiscordEmbed> embeds = new()
+            {
+                embed
+            };
+
+            if (message.Attachments.Count > 1)
+            {
+                foreach (var attachment in message.Attachments.Skip(1))
+                {
+                    embeds.Add(new DiscordEmbedBuilder()
+                        .WithAuthor($"{message.Author.Username}#{message.Author.Discriminator}", null, message.Author.AvatarUrl)
+                        .AddField("Additional attachment", $"[{attachment.FileName}]({attachment.Url})")
+                        .WithImageUrl(attachment.Url));
+                }
+            }
+
+            return new DiscordMessageBuilder().AddEmbeds(embeds.AsEnumerable());
+        }
+
     }
 }
