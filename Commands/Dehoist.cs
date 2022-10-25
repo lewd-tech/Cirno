@@ -78,7 +78,9 @@
                 if (!success)
                     failedCount++;
             }
-            await msg.ModifyAsync($"{Program.cfgjson.Emoji.Success} Successfully dehoisted {discordMembers.Count - failedCount} of {discordMembers.Count} member(s)! (Check Audit Log for details)");
+
+            _ = msg.DeleteAsync();
+            await ctx.Channel.SendMessageAsync(new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Success} Successfully dehoisted {discordMembers.Count - failedCount} of {discordMembers.Count} member(s)! (Check Audit Log for details)").WithReply(ctx.Message.Id, true, false));
         }
 
         [Command("massundehoist")]
@@ -95,9 +97,9 @@
             else
             {
                 string strList;
-                using (WebClient client = new())
+                using (HttpClient client = new())
                 {
-                    strList = client.DownloadString(ctx.Message.Attachments[0].Url);
+                    strList = await client.GetStringAsync(ctx.Message.Attachments[0].Url);
                 }
 
                 var list = strList.Split(' ');
