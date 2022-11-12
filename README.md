@@ -91,7 +91,7 @@ Once you have everything installed:
 1. Create a new Discord application and bot with all intents enabled, set `CLIPTOK_TOKEN` Windows environment variable to the bots token.
 2. Clone the repository (or your fork of it) to a folder.
 3. Open the `Cliptok.sln` within, making sure to use Visual Studio 2022.
-4. Copy `config.json` to `config.dev.json` and make changes for your testing sever.
+4. Copy `config.json` to `config.dev.json` and make changes for your testing server.
     - This is the most difficult part by far. Please try to replicate the required roles/channels/etc as closely as possible.
 5. Edit, run, debug, etc.
 
@@ -99,12 +99,12 @@ If you have a change to make that follows the contribution guidelines, send a Pu
 
 ## Credits
 
-### 🖥️ Developer
+### 🖥️ Developers
 - [Erisa](https://github.com/Erisa)
+- [FloatingMilkshake](https://github.com/FloatingMilkshake)
 
 ### ⚙️ Code contributors
 - [TorchGM](https://github.com/TorchGM)
-- [FloatingMilkshake](https://github.com/FloatingMilkshake)
 
 ### 💗 Significant sponsors
 - [FloatingMilkshake](https://github.com/FloatingMilkshake)
