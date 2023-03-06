@@ -278,6 +278,9 @@
 
         [JsonProperty("insiderCommandLockedToChannel")]
         public ulong InsiderCommandLockedToChannel { get; private set; } = 0;
+
+        [JsonProperty("dmAutoresponseTimeLimit")]
+        public int DmAutoresponseTimeLimit { get; private set; } = 0;
     }
 
     public class LogChannelConfig
@@ -453,6 +456,10 @@
 
     public class UserRoleConfig
     {
+        [JsonProperty("insiderCanary")]
+        public ulong InsiderCanary { get; private set; }
+
+
         [JsonProperty("insiderDev")]
         public ulong InsiderDev { get; private set; }
 
