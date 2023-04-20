@@ -22,6 +22,39 @@ namespace Cliptok.Events
             MessageHandlerAsync(client, e.Message, e.Channel, true);
         }
 
+        public static async Task MessageDeleted(DiscordClient client, MessageDeleteEventArgs e)
+        {
+            // Delete thread if all messages are deleted
+            if (Program.cfgjson.AutoDeleteEmptyThreads && e.Channel is DiscordThreadChannel)
+            {
+                try
+                {
+                    var member = await e.Guild.GetMemberAsync(e.Message.Author.Id);
+                    if (GetPermLevel(member) >= ServerPermLevel.TrialModerator)
+                        return;
+                }
+                catch
+                {
+                    // User is not in the server. Assume they are not a moderator,
+                    // so do nothing here.
+                }
+
+                IReadOnlyList<DiscordMessage> messages;
+                try
+                {
+                    messages = await e.Channel.GetMessagesAsync(1);
+                }
+                catch (DSharpPlus.Exceptions.NotFoundException ex)
+                {
+                    Program.discord.Logger.LogDebug(ex, "Delete event failed to fetch messages from channel {channel}", e.Channel.Id);
+                    return;
+                }
+
+                if (messages.Count == 0)
+                    await e.Channel.DeleteAsync("All messages in thread were deleted.");
+            }
+        }
+
         static async Task DeleteAndWarnAsync(DiscordMessage message, string reason, DiscordClient client)
         {
             _ = message.DeleteAsync();

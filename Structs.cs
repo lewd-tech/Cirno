@@ -260,7 +260,6 @@
         [JsonProperty("supportForumIntroThreadId")]
         public ulong SupportForumIntroThreadId { get; private set; } = 0;
 
-
         [JsonProperty("supportForumId")]
         public ulong SupportForumId { get; private set; } = 0;
 
@@ -281,6 +280,13 @@
 
         [JsonProperty("dmAutoresponseTimeLimit")]
         public int DmAutoresponseTimeLimit { get; private set; } = 0;
+
+        [JsonProperty("autoDeleteEmptyThreads")]
+        public bool AutoDeleteEmptyThreads { get; private set; } = false;
+
+        [JsonProperty("insiderCanaryThread")]
+        public ulong InsiderCanaryThread { get; set; } = 0;
+
     }
 
     public class LogChannelConfig
