@@ -134,7 +134,7 @@ namespace Cliptok
                 slash.RegisterCommands(type, cfgjson.ServerID); ;
 
             discord.ComponentInteractionCreated += InteractionEvents.ComponentInteractionCreateEvent;
-            discord.Ready += ReadyEvent.OnReady;
+            discord.SessionCreated += ReadyEvent.OnReady;
             discord.MessageCreated += MessageEvent.MessageCreated;
             discord.MessageUpdated += MessageEvent.MessageUpdated;
             discord.MessageDeleted += MessageEvent.MessageDeleted;
@@ -155,6 +155,8 @@ namespace Cliptok
             discord.GuildBanRemoved += UnbanEvent.OnUnban;
 
             discord.VoiceStateUpdated += VoiceEvents.VoiceStateUpdate;
+
+            discord.ChannelUpdated += ChannelEvents.ChannelUpdated;
 
             commands = discord.UseCommandsNext(new CommandsNextConfiguration
             {
