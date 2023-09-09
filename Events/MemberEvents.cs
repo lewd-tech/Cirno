@@ -29,6 +29,11 @@ namespace Cliptok.Events
 
             if (joinWatchlist.Contains(e.Member.Id))
             {
+                if (await db.HashExistsAsync("joinWatchedUsersNotes", e.Member.Id))
+                {
+                    embed.AddField($"Joinwatch Note", await db.HashGetAsync("joinWatchedUsersNotes", e.Member.Id));
+                }
+
                 LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Warning} Watched user {e.Member.Mention} just joined the server!", embed);
             }
 
@@ -92,12 +97,12 @@ namespace Cliptok.Events
             }
 
             // Restore user overrides stored in db (if there are any)
-            
+
             var userOverwrites = await db.HashGetAsync("overrides", e.Member.Id.ToString());
             if (string.IsNullOrWhiteSpace(userOverwrites)) return; // user has no overrides saved
             var dictionary = JsonConvert.DeserializeObject<Dictionary<ulong, DiscordOverwrite>>(userOverwrites);
             if (dictionary is null) return;
-            
+
             foreach (var overwrite in dictionary)
             {
                 DiscordChannel channel;
@@ -109,7 +114,7 @@ namespace Cliptok.Events
                 {
                     continue;
                 }
-                
+
                 await channel.AddOverwriteAsync(e.Member, overwrite.Value.Allowed, overwrite.Value.Denied,
                     "Restoring saved overrides for member.");
             }
@@ -176,6 +181,11 @@ namespace Cliptok.Events
 
             if (joinWatchlist.Contains(e.Member.Id))
             {
+                if (await db.HashExistsAsync("joinWatchedUsersNotes", e.Member.Id))
+                {
+                    embed.AddField($"Joinwatch Note", await db.HashGetAsync("joinWatchedUsersNotes", e.Member.Id));
+                }
+
                 LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Warning} Watched user {e.Member.Mention} just left the server!", embed);
             }
         }
