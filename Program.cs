@@ -151,6 +151,7 @@ namespace Cliptok
             discord.ThreadListSynced += ThreadEvents.Discord_ThreadListSynced;
             discord.ThreadMemberUpdated += ThreadEvents.Discord_ThreadMemberUpdated;
             discord.ThreadMembersUpdated += ThreadEvents.Discord_ThreadMembersUpdated;
+            discord.Heartbeated += HeartbeatEvent.OnHeartbeat;
 
             discord.GuildBanRemoved += UnbanEvent.OnUnban;
 
@@ -180,12 +181,14 @@ namespace Cliptok
             {
                 try
                 {
-                    List<Task<bool>> taskList = new();
-                    taskList.Add(Tasks.PunishmentTasks.CheckMutesAsync());
-                    taskList.Add(Tasks.PunishmentTasks.CheckBansAsync());
-                    taskList.Add(Tasks.ReminderTasks.CheckRemindersAsync());
-                    taskList.Add(Tasks.RaidmodeTasks.CheckRaidmodeAsync(cfgjson.ServerID));
-                    taskList.Add(Tasks.LockdownTasks.CheckUnlocksAsync());
+                    List<Task<bool>> taskList =
+                    [
+                        Tasks.PunishmentTasks.CheckMutesAsync(),
+                        Tasks.PunishmentTasks.CheckBansAsync(),
+                        Tasks.ReminderTasks.CheckRemindersAsync(),
+                        Tasks.RaidmodeTasks.CheckRaidmodeAsync(cfgjson.ServerID),
+                        Tasks.LockdownTasks.CheckUnlocksAsync(),
+                    ];
 
                     // To prevent a future issue if checks take longer than 10 seconds,
                     // we only start the 10 second counter after all tasks have concluded.
