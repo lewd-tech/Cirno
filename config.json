@@ -26,7 +26,8 @@
     "directx",
     "winadmins",
     "minecraft",
-    "intel"
+    "intel",
+    "excel"
   ],
   "inviteIDExclusion": [
     150662382874525696,
@@ -52,7 +53,8 @@
     675491639804035089,
     114211522384756737,
     834949385535750214,
-    554824368740630529
+    554824368740630529,
+    924393747112919090
   ],
   "warningDaysThreshold": 30,
   "autoMuteThresholds": {
@@ -151,7 +153,7 @@
   ],
   "giveawaysChannel": 280002642602622986,
   "giveawayBot": 517176766226235404,
-  "giveawayTriggerMessage": "<:msparty:517199105458569216>   **GIVEAWAY**   <:msparty:517199105458569216>",
+  "giveawayTriggerMessage": "<@&1169336992455200820>",
   "githubWorkflow": {
     "repo": "lewd-tech/Cirno",
     "ref": "main",

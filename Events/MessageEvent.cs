@@ -44,7 +44,7 @@ namespace Cliptok.Events
                 IReadOnlyList<DiscordMessage> messages;
                 try
                 {
-                    messages = await e.Channel.GetMessagesAsync(1);
+                    messages = await e.Channel.GetMessagesAsync(1).ToListAsync();
                 }
                 catch (DSharpPlus.Exceptions.NotFoundException ex)
                 {
@@ -437,7 +437,7 @@ namespace Cliptok.Events
                                 .WithTimestamp(DateTime.Now)
                                 .WithAuthor(DiscordHelpers.UniqueUsername(message.Author), null, $"https://cdn.discordapp.com/avatars/{message.Author.Id}/{message.Author.AvatarHash}.png?size=128");
 
-                            var lastMsgs = await message.Channel.GetMessagesBeforeAsync(message.Id, 50);
+                            var lastMsgs = await message.Channel.GetMessagesBeforeAsync(message.Id, 50).ToListAsync();
                             var msgMatch = lastMsgs.FirstOrDefault(m => m.Author.Id == message.Author.Id);
 
                             if (msgMatch is not null)
@@ -461,7 +461,7 @@ namespace Cliptok.Events
                             }
 
                             embed.AddField("Message Link", $"https://discord.com/channels/{message.Channel.Guild.Id}/{message.Channel.Id}/{message.Id}");
-                            var logOut = await LogChannelHelper.LogMessageAsync("support", new DiscordMessageBuilder().WithEmbed(embed));
+                            var logOut = await LogChannelHelper.LogMessageAsync("support", new DiscordMessageBuilder().AddEmbed(embed));
                             _ = logOut.CreateReactionAsync(DiscordEmoji.FromName(client, ":CliptokAcknowledge:", true));
                         }
                     }
@@ -586,7 +586,7 @@ namespace Cliptok.Events
                     Program.db.SetAdd("processedFeedbackHubThreads", thread.Id);
 
                     // we need to make sure this is the first message in the channel
-                    if ((await thread.GetMessagesBeforeAsync(message.Id)).Count == 0)
+                    if ((await thread.GetMessagesBeforeAsync(message.Id).ToListAsync()).Count == 0)
                     {
                         // lock thread if there is no possible feedback hub link
                         if (!message.Content.Contains("aka.ms/") && !message.Content.Contains("feedback-hub:"))
@@ -601,7 +601,7 @@ namespace Cliptok.Events
                             await LogChannelHelper.LogMessageAsync("messages",
                                 new DiscordMessageBuilder()
                                     .WithContent($"{Program.cfgjson.Emoji.Deleted} Deleted non-feedback post from {message.Author.Mention} in {message.Channel.Parent.Mention}:")
-                                    .WithEmbed(new DiscordEmbedBuilder()
+                                    .AddEmbed(new DiscordEmbedBuilder()
                                         .WithAuthor(
                                             $"{DiscordHelpers.UniqueUsername(message.Author)} in #{message.Channel.Parent.Name}",
                                             null, await LykosAvatarMethods.UserOrMemberAvatarURL(message.Author, message.Channel.Guild))

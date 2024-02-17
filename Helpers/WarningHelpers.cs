@@ -224,7 +224,7 @@
             LogChannelHelper.LogMessageAsync("mod",
                 new DiscordMessageBuilder()
                     .WithContent($"{Program.cfgjson.Emoji.Warning} New warning for {targetUser.Mention}!")
-                    .WithEmbed(await FancyWarnEmbedAsync(warning, true, 0xFEC13D, false, targetUser.Id))
+                    .AddEmbed(await FancyWarnEmbedAsync(warning, true, 0xFEC13D, false, targetUser.Id))
                     .WithAllowedMentions(Mentions.None)
             );
 
@@ -312,7 +312,7 @@
                 if (dmMessage is not null)
                 {
                     var guild = await Program.discord.GetGuildAsync(Program.cfgjson.ServerID);
-                    await dmMessage.ModifyAsync($"{Program.cfgjson.Emoji.Success} You were warned in **{guild.Name}**, but the warning was revoked by a Moderator.");
+                    await dmMessage.ModifyAsync(new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Success} You were warned in **{guild.Name}**, but the warning was revoked by a Moderator."), suppressEmbeds: true);
                 }
 
                 Program.db.HashDelete(userID.ToString(), warning.WarningId);
