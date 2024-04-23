@@ -27,7 +27,8 @@
     "winadmins",
     "minecraft",
     "intel",
-    "excel"
+    "excel",
+    "csharp"
   ],
   "inviteIDExclusion": [
     150662382874525696,
@@ -54,7 +55,8 @@
     114211522384756737,
     834949385535750214,
     554824368740630529,
-    924393747112919090
+    924393747112919090,
+    143867839282020352
   ],
   "warningDaysThreshold": 30,
   "autoMuteThresholds": {
