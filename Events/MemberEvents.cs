@@ -4,8 +4,9 @@ namespace Cliptok.Events
 {
     public class MemberEvents
     {
-        public static async Task GuildMemberAdded(DiscordClient client, GuildMemberAddEventArgs e)
+        public static async Task GuildMemberAdded(DiscordClient client, GuildMemberAddedEventArgs e)
         {
+            client.Logger.LogDebug("Got a member added event for {member}", e.Member.Id); 
 
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
@@ -64,36 +65,36 @@ namespace Cliptok.Events
                 await e.Member.TimeoutAsync(null, "Removing timeout since member was presumably unmuted while left");
             }
 
-            if (db.HashExists("unbanned", e.Member.Id))
-                return;
-
-            if (avatars.Contains(e.Member.AvatarHash))
+            if (!db.HashExists("unbanned", e.Member.Id))
             {
-                var _ = BanHelpers.BanSilently(e.Guild, e.Member.Id, "Secret sauce");
-                await LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Banned} Raid-banned {e.Member.Mention} for matching avatar: {e.Member.AvatarUrl.Replace("1024", "128")}");
-            }
+                if (avatars.Contains(e.Member.AvatarHash))
+                {
+                    var _ = BanHelpers.BanSilently(e.Guild, e.Member.Id, "Secret sauce");
+                    await LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Banned} Raid-banned {e.Member.Mention} for matching avatar: {e.Member.AvatarUrl.Replace("1024", "128")}");
+                }
 
-            string banDM = $"You have been automatically banned from **{e.Guild.Name}** for matching patterns of known raiders.\n" +
+                string banDM = $"You have been automatically banned from **{e.Guild.Name}** for matching patterns of known raiders.\n" +
                     $"Please send an appeal and you will be unbanned as soon as possible: {cfgjson.AppealLink}\n" +
                     $"The requirements for appeal can be ignored in this case. Sorry for any inconvenience caused.";
 
-            foreach (var IdAutoBanSet in cfgjson.AutoBanIds)
-            {
-                if (db.HashExists(IdAutoBanSet.Name, e.Member.Id))
+                foreach (var IdAutoBanSet in cfgjson.AutoBanIds)
                 {
-                    return;
+                    if (db.HashExists(IdAutoBanSet.Name, e.Member.Id))
+                    {
+                        continue;
+                    }
+
+                    if (e.Member.Id > IdAutoBanSet.LowerBound && e.Member.Id < IdAutoBanSet.UpperBound)
+                    {
+                        await e.Member.SendMessageAsync(banDM);
+
+                        await e.Member.BanAsync(TimeSpan.FromDays(7), "Matching patterns of known raiders, please unban if appealed.");
+
+                        await LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Banned} Automatically appeal-banned {e.Member.Mention} for matching the creation date of the {IdAutoBanSet.Name} DM scam raiders.");
+                    }
+
+                    db.HashSet(IdAutoBanSet.Name, e.Member.Id, true);
                 }
-
-                if (e.Member.Id > IdAutoBanSet.LowerBound && e.Member.Id < IdAutoBanSet.UpperBound)
-                {
-                    await e.Member.SendMessageAsync(banDM);
-
-                    await e.Member.BanAsync(7, "Matching patterns of known raiders, please unban if appealed.");
-
-                    await LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Banned} Automatically appeal-banned {e.Member.Mention} for matching the creation date of the {IdAutoBanSet.Name} DM scam raiders.");
-                }
-
-                db.HashSet(IdAutoBanSet.Name, e.Member.Id, true);
             }
 
             // Restore user overrides stored in db (if there are any)
@@ -120,19 +121,21 @@ namespace Cliptok.Events
             }
         }
 
-        public static async Task GuildMemberRemoved(DiscordClient client, GuildMemberRemoveEventArgs e)
+        public static async Task GuildMemberRemoved(DiscordClient client, GuildMemberRemovedEventArgs e)
         {
+            client.Logger.LogDebug("Got a member removed event for {member}", e.Member.Id);
 
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
 
             var muteRole = e.Guild.GetRole(cfgjson.MutedRole);
+            var tqsMuteRole = e.Guild.GetRole(cfgjson.TqsMutedRole);
             var userMute = await db.HashGetAsync("mutes", e.Member.Id);
 
-            if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole))
+            if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) & !e.Member.Roles.Contains(tqsMuteRole))
                 db.HashDeleteAsync("mutes", e.Member.Id);
 
-            if (e.Member.Roles.Contains(muteRole) && userMute.IsNull)
+            if ((e.Member.Roles.Contains(muteRole) || e.Member.Roles.Contains(tqsMuteRole)) && userMute.IsNull)
             {
                 MemberPunishment newMute = new()
                 {
@@ -146,7 +149,7 @@ namespace Cliptok.Events
                 db.HashSetAsync("mutes", e.Member.Id, JsonConvert.SerializeObject(newMute));
             }
 
-            if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole))
+            if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) && !e.Member.Roles.Contains(tqsMuteRole))
                 db.HashDeleteAsync("mutes", e.Member.Id);
 
             string rolesStr = "None";
@@ -190,8 +193,9 @@ namespace Cliptok.Events
             }
         }
 
-        public static async Task GuildMemberUpdated(DiscordClient _, GuildMemberUpdateEventArgs e)
+        public static async Task GuildMemberUpdated(DiscordClient client, GuildMemberUpdatedEventArgs e)
         {
+            client.Logger.LogDebug("Got a member updated event for {member}", e.Member.Id);
 
             // dont check bots
             if (e.Member.IsBot)
@@ -202,9 +206,6 @@ namespace Cliptok.Events
                 return;
 
             // if they are auto banned, don't progress any further
-            if (await ScamHelpers.CheckAvatarsAsync(e.Member))
-                return;
-
             if (await ScamHelpers.UsernameCheckAsync(e.Member))
                 return;
 
@@ -232,8 +233,10 @@ namespace Cliptok.Events
                     });
         }
 
-        public static async Task UserUpdated(DiscordClient _, UserUpdateEventArgs e)
+        public static async Task UserUpdated(DiscordClient client, UserUpdatedEventArgs e)
         {
+            client.Logger.LogDebug("Got a user updated event for {member}", e.UserAfter.Id);
+
             // dont check bots
             if (e.UserAfter.IsBot)
                 return;

@@ -145,29 +145,16 @@
                 string responseToSend;
                 if (match)
                 {
-                    responseToSend = $"Match found:\n```json\n{responseText}\n```";
+                    responseToSend = $"Match found:\n```json\n{responseText}\n";
 
                 }
                 else
                 {
-                    responseToSend = $"No valid match found.\nHTTP Status `{(int)httpStatus}`, result:\n```json\n{responseText}\n```";
+                    responseToSend = $"No valid match found.\nHTTP Status `{(int)httpStatus}`, result:\n";
                 }
 
-                if (responseToSend.Length > 1940)
-                {
-                    try
-                    {
-                        HasteBinResult hasteURL = await Program.hasteUploader.Post(responseText);
-                        if (hasteURL.IsSuccess)
-                            responseToSend = hasteURL.FullUrl + ".json";
-                        else
-                            responseToSend = "Response was too big and Hastebin failed, sorry.";
-                    }
-                    catch
-                    {
-                        responseToSend = "Response was too big and Hastebin failed, sorry.";
-                    }
-                }
+                responseToSend += await StringHelpers.CodeOrHasteBinAsync(responseText, "json");
+
                 await ctx.RespondAsync(responseToSend);
             }
             else
@@ -193,8 +180,18 @@
                 if (note != "")
                 {
                     // User is already joinwatched, just update note
+
+                    // Get current note; if it's the same, do nothing
+                    var currentNote = await Program.db.HashGetAsync("joinWatchedUsersNotes", user.Id);
+                    if (currentNote == note || (string.IsNullOrWhiteSpace(currentNote) && string.IsNullOrWhiteSpace(note)))
+                    {
+                        await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {user.Mention} is already being watched with the same note! Nothing to do.");
+                        return;
+                    }
+
+                    // If note is different, update it
                     await Program.db.HashSetAsync("joinWatchedUsersNotes", user.Id, note);
-                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successfully updated the note for {user.Mention}. Run again with no note to unwatch.");
+                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successfully updated the note for {user.Mention} (run again with no note to unwatch):\n> {note}");
                     return;
                 }
 

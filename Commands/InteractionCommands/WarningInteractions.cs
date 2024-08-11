@@ -6,7 +6,7 @@ namespace Cliptok.Commands.InteractionCommands
     {
         [SlashCommand("warn", "Formally warn a user, usually for breaking the server rules.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
-        [SlashCommandPermissions(Permissions.ModerateMembers)]
+        [SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
         public async Task WarnSlashCommand(InteractionContext ctx,
          [Option("user", "The user to warn.")] DiscordUser user,
          [Option("reason", "The reason they're being warned.")] string reason,
@@ -16,7 +16,7 @@ namespace Cliptok.Commands.InteractionCommands
         {
             // Initial response to avoid the 3 second timeout, will edit later.
             var eout = new DiscordInteractionResponseBuilder().AsEphemeral(true);
-            await ctx.CreateResponseAsync(InteractionResponseType.DeferredChannelMessageWithSource, eout);
+            await ctx.CreateResponseAsync(DiscordInteractionResponseType.DeferredChannelMessageWithSource, eout);
 
             // Edits need a webhook rather than interaction..?
             DiscordWebhookBuilder webhookOut;
@@ -67,12 +67,12 @@ namespace Cliptok.Commands.InteractionCommands
             if (!publicWarnings)
                 eout.AsEphemeral(true);
 
-            await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, eout);
+            await ctx.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource, eout);
         }
 
         [SlashCommand("transfer_warnings", "Transfer warnings from one user to another.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.Moderator)]
-        [SlashCommandPermissions(Permissions.ModerateMembers)]
+        [SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
         public async Task TransferWarningsSlashCommand(InteractionContext ctx,
             [Option("source_user", "The user currently holding the warnings.")] DiscordUser sourceUser,
             [Option("target_user", "The user receiving the warnings.")] DiscordUser targetUser,
@@ -80,12 +80,20 @@ namespace Cliptok.Commands.InteractionCommands
             [Option("force_override", "DESTRUCTIVE OPERATION: Whether to OVERRIDE and DELETE the target users existing warnings.")] bool forceOverride = false
         )
         {
+            await ctx.DeferAsync(ephemeral: false);
+
+            if (sourceUser == targetUser)
+            {
+                await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} The source and target users cannot be the same!"));
+                return;
+            }
+            
             var sourceWarnings = await Program.db.HashGetAllAsync(sourceUser.Id.ToString());
             var targetWarnings = await Program.db.HashGetAllAsync(targetUser.Id.ToString());
 
             if (sourceWarnings.Length == 0)
             {
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} The source user has no warnings to transfer.", await WarningHelpers.GenerateWarningsEmbedAsync(sourceUser));
+                await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} The source user has no warnings to transfer.").AddEmbed(await GenerateWarningsEmbedAsync(sourceUser)));
                 return;
             }
             else if (merge)
@@ -98,9 +106,9 @@ namespace Cliptok.Commands.InteractionCommands
             }
             else if (targetWarnings.Length > 0 && !forceOverride)
             {
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Warning} **CAUTION**: The target user has warnings.\n\n" +
-                    $"If you are sure you want to **OVERRIDE** and **DELETE** these warnings, please consider the consequences before adding `force_override: True` to the command.\nIf you wish to **NOT** override the target's warnings, please use `merge: True` instead.",
-                    await WarningHelpers.GenerateWarningsEmbedAsync(targetUser));
+                await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Warning} **CAUTION**: The target user has warnings.\n\n" +
+                    $"If you are sure you want to **OVERRIDE** and **DELETE** these warnings, please consider the consequences before adding `force_override: True` to the command.\nIf you wish to **NOT** override the target's warnings, please use `merge: True` instead.")
+                    .AddEmbed(await GenerateWarningsEmbedAsync(targetUser)));
                 return;
             }
             else if (targetWarnings.Length > 0 && forceOverride)
@@ -118,12 +126,12 @@ namespace Cliptok.Commands.InteractionCommands
                 operationText = "merge ";
             else if (forceOverride)
                 operationText = "force ";
-            await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Successfully {operationText}transferred warnings from {sourceUser.Mention} to {targetUser.Mention}!");
             await LogChannelHelper.LogMessageAsync("mod",
                 new DiscordMessageBuilder()
                     .WithContent($"{Program.cfgjson.Emoji.Information} Warnings from {sourceUser.Mention} were {operationText}transferred to {targetUser.Mention} by `{DiscordHelpers.UniqueUsername(ctx.User)}`")
-                    .AddEmbed(await WarningHelpers.GenerateWarningsEmbedAsync(targetUser))
-           );
+                    .AddEmbed(await GenerateWarningsEmbedAsync(targetUser))
+            );
+            await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Success} Successfully {operationText}transferred warnings from {sourceUser.Mention} to {targetUser.Mention}!"));
         }
 
         internal partial class WarningsAutocompleteProvider : IAutocompleteProvider
@@ -140,7 +148,8 @@ namespace Cliptok.Commands.InteractionCommands
 
                 var user = await ctx.Client.GetUserAsync((ulong)useroption.Value);
 
-                var warnings = Program.db.HashGetAll(user.Id.ToString()).ToDictionary(
+                var warnings = Program.db.HashGetAll(user.Id.ToString())
+                    .Where(x => JsonConvert.DeserializeObject<UserWarning>(x.Value).Type == WarningType.Warning).ToDictionary(
                    x => x.Name.ToString(),
                   x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
                  ).OrderByDescending(x => x.Value.WarningId);
@@ -162,15 +171,19 @@ namespace Cliptok.Commands.InteractionCommands
         }
 
         [SlashCommand("warndetails", "Search for a warning and return its details.", defaultPermission: false)]
-        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), SlashCommandPermissions(Permissions.ModerateMembers)]
+        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
         public async Task WarndetailsSlashCommand(InteractionContext ctx,
             [Option("user", "The user to fetch a warning for.")] DiscordUser user,
             [Autocomplete(typeof(WarningsAutocompleteProvider)), Option("warning", "Type to search! Find the warning you want to fetch.")] string warning,
             [Option("public", "Whether to show the output publicly.")] bool publicWarnings = false
         )
         {
-            long warnId = default;
+            if (warning.Contains(' '))
+            {
+                warning = warning.Split(' ')[0];
+            }
 
+            long warnId;
             try
             {
                 warnId = Convert.ToInt64(warning);
@@ -185,20 +198,29 @@ namespace Cliptok.Commands.InteractionCommands
 
             if (warningObject is null)
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.", ephemeral: true);
+            else if (warningObject.Type == WarningType.Note)
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That's a note, not a warning! Try using `/note details` instead, or make sure you've got the right warning ID.", ephemeral: true);
             else
-                await ctx.RespondAsync(null, await FancyWarnEmbedAsync(warningObject, true, userID: user.Id), ephemeral: !publicWarnings);
+            {
+                await ctx.DeferAsync(ephemeral: !publicWarnings);
+                await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().AddEmbed(await FancyWarnEmbedAsync(warningObject, true, userID: user.Id)));
+            }
         }
 
         [SlashCommand("delwarn", "Search for a warning and delete it!", defaultPermission: false)]
-        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), SlashCommandPermissions(Permissions.ModerateMembers)]
+        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
         public async Task DelwarnSlashCommand(InteractionContext ctx,
             [Option("user", "The user to delete a warning for.")] DiscordUser targetUser,
             [Autocomplete(typeof(WarningsAutocompleteProvider))][Option("warning", "Type to search! Find the warning you want to delete.")] string warningId,
             [Option("public", "Whether to show the output publicly. Default: false")] bool showPublic = false
         )
         {
-            long warnId = default;
+            if (warningId.Contains(' '))
+            {
+                warningId = warningId.Split(' ')[0];
+            }
 
+            long warnId;
             try
             {
                 warnId = Convert.ToInt64(warningId);
@@ -210,26 +232,35 @@ namespace Cliptok.Commands.InteractionCommands
             }
 
             UserWarning warning = GetWarning(targetUser.Id, warnId);
+
             if (warning is null)
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.", ephemeral: true);
+            else if (warning.Type == WarningType.Note)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That's a note, not a warning! Try using `/note delete` instead, or make sure you've got the right warning ID.", ephemeral: true);
+            }
             else if (GetPermLevel(ctx.Member) == ServerPermLevel.TrialModerator && warning.ModUserId != ctx.User.Id && warning.ModUserId != ctx.Client.CurrentUser.Id)
             {
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {ctx.User.Mention}, as a Trial Moderator you cannot edit or delete warnings that aren't issued by you or the bot!", ephemeral: true);
             }
             else
             {
+                await ctx.DeferAsync(ephemeral: !showPublic);
+
                 bool success = await DelWarningAsync(warning, targetUser.Id);
                 if (success)
                 {
-                    await ctx.RespondAsync($"{Program.cfgjson.Emoji.Deleted} Successfully deleted warning `{StringHelpers.Pad(warnId)}` (belonging to {targetUser.Mention})", ephemeral: !showPublic);
-
                     await LogChannelHelper.LogMessageAsync("mod",
                         new DiscordMessageBuilder()
                             .WithContent($"{Program.cfgjson.Emoji.Deleted} Warning deleted:" +
                             $"`{StringHelpers.Pad(warnId)}` (belonging to {targetUser.Mention}, deleted by {ctx.Member.Mention})")
                             .AddEmbed(await FancyWarnEmbedAsync(warning, true, 0xf03916, true, targetUser.Id))
                             .WithAllowedMentions(Mentions.None)
-                        );
+                    );
+
+                    await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Deleted} Successfully deleted warning `{StringHelpers.Pad(warnId)}` (belonging to {targetUser.Mention})"));
+
+
                 }
                 else
                 {
@@ -239,15 +270,19 @@ namespace Cliptok.Commands.InteractionCommands
         }
 
         [SlashCommand("editwarn", "Search for a warning and edit it!", defaultPermission: false)]
-        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), SlashCommandPermissions(Permissions.ModerateMembers)]
+        [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator), SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
         public async Task EditWarnSlashCommand(InteractionContext ctx,
             [Option("user", "The user to fetch a warning for.")] DiscordUser user,
             [Autocomplete(typeof(WarningsAutocompleteProvider))][Option("warning", "Type to search! Find the warning you want to edit.")] string warning,
             [Option("new_reason", "The new reason for the warning")] string reason,
             [Option("public", "Whether to show the output publicly. Default: false")] bool showPublic = false)
         {
-            long warnId = default;
+            if (warning.Contains(' '))
+            {
+                warning = warning.Split(' ')[0];
+            }
 
+            long warnId;
             try
             {
                 warnId = Convert.ToInt64(warning);
@@ -265,24 +300,31 @@ namespace Cliptok.Commands.InteractionCommands
             }
 
             var warningObject = GetWarning(user.Id, warnId);
+
             if (warningObject is null)
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.", ephemeral: true);
+            else if (warningObject.Type == WarningType.Note)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That's a note, not a warning! Try using `/note edit` instead, or make sure you've got the right warning ID.", ephemeral: true);
+            }
             else if (GetPermLevel(ctx.Member) == ServerPermLevel.TrialModerator && warningObject.ModUserId != ctx.User.Id && warningObject.ModUserId != ctx.Client.CurrentUser.Id)
             {
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {ctx.User.Mention}, as a Trial Moderator you cannot edit or delete warnings that aren't issued by you or the bot!", ephemeral: true);
             }
             else
             {
-                await EditWarning(user, warnId, ctx.User, reason);
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Information} Successfully edited warning `{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})",
-                    await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), userID: user.Id), ephemeral: !showPublic);
+                await ctx.DeferAsync(ephemeral: !showPublic);
 
                 await LogChannelHelper.LogMessageAsync("mod",
                     new DiscordMessageBuilder()
                         .WithContent($"{Program.cfgjson.Emoji.Information} Warning edited:" +
                         $"`{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})")
                         .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), true, userID: user.Id))
-                    );
+                );
+
+                await EditWarning(user, warnId, ctx.User, reason);
+                await ctx.FollowUpAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Information} Successfully edited warning `{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})")
+                    .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), userID: user.Id)));
             }
         }
     }

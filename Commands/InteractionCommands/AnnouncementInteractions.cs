@@ -4,7 +4,7 @@
     {
         [SlashCommand("announcebuild", "Announce a Windows Insider build in the current channel.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
-        [SlashCommandPermissions(Permissions.ModerateMembers)]
+        [SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
         public async Task AnnounceBuildSlashCommand(InteractionContext ctx,
             [Choice("Windows 10", 10)]
             [Choice("Windows 11", 11)]
@@ -45,9 +45,11 @@
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Both insider channels cannot be the same! Simply set one instead.", ephemeral: true);
             }
 
-            if (windowsVersion == 10 && insiderChannel1 != "RP")
+            List<string> validWindows10Channels = ["RP", "Beta", ""];
+
+            if (windowsVersion == 10 && (!validWindows10Channels.Contains(insiderChannel1) || !validWindows10Channels.Contains(insiderChannel2)))
             {
-                await ctx.RespondAsync(text: $"{Program.cfgjson.Emoji.Error} Windows 10 only has a Release Preview Channel.", ephemeral: true);
+                await ctx.RespondAsync(text: $"{Program.cfgjson.Emoji.Error} Windows 10 only has Release Preview and Beta Channels.", ephemeral: true);
                 return;
             }
 
@@ -64,6 +66,10 @@
             if (windowsVersion == 10 && insiderChannel1 == "RP")
             {
                 roleKey1 = "rp10";
+            }
+            else if (windowsVersion == 10 && insiderChannel1 == "Beta")
+            {
+                roleKey1 = "beta10";
             }
             else
             {
@@ -104,6 +110,10 @@
                 if (windowsVersion == 10 && insiderChannel2 == "RP")
                 {
                     roleKey2 = "rp10";
+                }
+                else if (windowsVersion == 10 && insiderChannel2 == "Beta")
+                {
+                    roleKey2 = "beta10";
                 }
                 else
                 {
@@ -170,7 +180,7 @@
                 {
                     noPingMsgString += $"\n\nDiscuss it here: {threadChannel.Mention}";
                 }
-                else if (insiderChannel1 == "Canary" && insiderChannel2 == "" &&  Program.cfgjson.InsiderCanaryThread != 0 && autothreadName == "Build {0} ({1})" && !canaryCreateNewThread)
+                else if (insiderChannel1 == "Canary" && insiderChannel2 == "" && Program.cfgjson.InsiderCanaryThread != 0 && autothreadName == "Build {0} ({1})" && !canaryCreateNewThread)
                 {
                     threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderCanaryThread);
                     noPingMsgString += $"\n\nDiscuss it here: {threadChannel.Mention}";
@@ -205,7 +215,7 @@
                     threadBrackets = "10 RP";
 
                 string threadName = string.Format(autothreadName, buildNumber, threadBrackets);
-                threadChannel = await messageSent.CreateThreadAsync(threadName, AutoArchiveDuration.Week, "Creating thread for Insider build.");
+                threadChannel = await messageSent.CreateThreadAsync(threadName, DiscordAutoArchiveDuration.Week, "Creating thread for Insider build.");
 
                 var initialMsg = await threadChannel.SendMessageAsync($"{blogLink}");
                 await initialMsg.PinAsync();
@@ -226,7 +236,7 @@
                 if (insiderChannel2 != "")
                     await insiderRole2.ModifyAsync(mentionable: false);
 
-                if (announcementChannel.Type is ChannelType.News)
+                if (announcementChannel.Type is DiscordChannelType.News)
                     await announcementChannel.CrosspostMessageAsync(msg);
             }
 

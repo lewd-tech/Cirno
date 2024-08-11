@@ -14,18 +14,54 @@ namespace Cliptok.Events
 
         static public readonly HttpClient httpClient = new();
 
-        public static async Task MessageCreated(DiscordClient client, MessageCreateEventArgs e)
+        public static async Task MessageCreated(DiscordClient client, MessageCreatedEventArgs e)
         {
+            if (e.Message is null)
+            {
+                client.Logger.LogError("Got a message create event but the message was null!");
+                return;
+            } else if (e.Message.Author is null)
+            {
+                client.Logger.LogDebug("Got a message create event for a message with no author: {message}", DiscordHelpers.MessageLink(e.Message));
+            } else
+            {
+                client.Logger.LogDebug("Got a message create event for {message} by {user}", DiscordHelpers.MessageLink(e.Message), e.Message.Author.Id);
+            }
+
             await MessageHandlerAsync(client, e.Message, e.Channel);
         }
 
-        public static async Task MessageUpdated(DiscordClient client, MessageUpdateEventArgs e)
+        public static async Task MessageUpdated(DiscordClient client, MessageUpdatedEventArgs e)
         {
+            if (e.Message is null)
+            {
+                client.Logger.LogError("Got a message update event but the message was null!");
+                return;
+            } else if (e.Message.Author is null)
+            {
+                client.Logger.LogDebug("Got a message update event for a message with no author: {message}", DiscordHelpers.MessageLink(e.Message));
+            } else
+            {
+                client.Logger.LogDebug("Got a message update event for {message} by {user}", DiscordHelpers.MessageLink(e.Message), e.Message.Author.Id);
+            }
+
             await MessageHandlerAsync(client, e.Message, e.Channel, true);
         }
 
-        public static async Task MessageDeleted(DiscordClient client, MessageDeleteEventArgs e)
+        public static async Task MessageDeleted(DiscordClient client, MessageDeletedEventArgs e)
         {
+            if (e.Message is null)
+            {
+                client.Logger.LogError("Got a message delete event but the message was null!");
+                return;
+            } else if (e.Message.Author is null)
+            {
+                client.Logger.LogDebug("Got a message delete event for a message with no author: {message}", DiscordHelpers.MessageLink(e.Message));
+            } else
+            {
+                client.Logger.LogDebug("Got a message delete event for {message} by {user}", DiscordHelpers.MessageLink(e.Message), e.Message.Author.Id);
+            }
+
             // Delete thread if all messages are deleted
             if (Program.cfgjson.AutoDeleteEmptyThreads && e.Channel is DiscordThreadChannel)
             {
@@ -79,6 +115,9 @@ namespace Cliptok.Events
                 if (message.Timestamp.Year < (DateTime.Now.Year - 2))
                     return;
 
+                if (isAnEdit && (message.EditedTimestamp is null || message.EditedTimestamp == message.CreationTimestamp))
+                    return;
+
                 if (message.Author is null || message.Author.Id == client.CurrentUser.Id)
                     return;
 
@@ -119,10 +158,51 @@ namespace Cliptok.Events
                         return;
                     }
 
+                    DiscordMessageBuilder memberWarnInfo = new();
+
                     DiscordRole muted = message.Channel.Guild.GetRole(Program.cfgjson.MutedRole);
                     if (modmailMember.Roles.Contains(muted))
                     {
-                        await channel.SendMessageAsync(new DiscordMessageBuilder().AddEmbed(await WarningHelpers.GenerateWarningsEmbedAsync(modmailMember)).AddEmbed(await MuteHelpers.MuteStatusEmbed(modmailMember, message.Channel.Guild)));
+                        memberWarnInfo.AddEmbed(await WarningHelpers.GenerateWarningsEmbedAsync(modmailMember)).AddEmbed(await MuteHelpers.MuteStatusEmbed(modmailMember, message.Channel.Guild));
+                    }
+
+                    // Add notes to message if any exist & are set to show on modmail
+
+                    // Get user notes
+                    var notes = Program.db.HashGetAll(modmailMember.Id.ToString())
+                        .Where(x => JsonConvert.DeserializeObject<UserNote>(x.Value).Type == WarningType.Note).ToDictionary(
+                            x => x.Name.ToString(),
+                            x => JsonConvert.DeserializeObject<UserNote>(x.Value)
+                        );
+
+                    // Filter to notes set to notify on modmail
+                    var notesToNotify = notes.Where(x => x.Value.ShowOnModmail).ToDictionary(x => x.Key, x => x.Value);
+
+                    // If there are notes, build embed and add to message
+                    if (notesToNotify.Count != 0)
+                    {
+                        memberWarnInfo.AddEmbed(await UserNoteHelpers.GenerateUserNotesEmbedAsync(modmailMember, notesToUse: notesToNotify));
+
+                        // For any notes set to show once, show the full note content in its own embed because it will not be able to be fetched manually
+                        foreach (var note in notesToNotify)
+                            if (memberWarnInfo.Embeds.Count < 10) // Limit to 10 embeds; this probably won't be an issue because we probably won't have that many 'show once' notes
+                                if (note.Value.ShowOnce)
+                                    memberWarnInfo.AddEmbed(await UserNoteHelpers.GenerateUserNoteSimpleEmbedAsync(note.Value, modmailMember));
+                    }
+
+                    // If message was built (if user is muted OR if user has notes to show on modmail), send it
+                    if (memberWarnInfo.Embeds.Count != 0)
+                        await message.Channel.SendMessageAsync(memberWarnInfo);
+
+                    // If any notes were shown & set to show only once, delete them now
+                    foreach (var note in notesToNotify.Where(note => note.Value.ShowOnce))
+                    {
+                        // Delete note
+                        await Program.db.HashDeleteAsync(modmailMember.Id.ToString(), note.Key);
+
+                        // Log deletion to mod-logs channel
+                        var embed = new DiscordEmbedBuilder(await UserNoteHelpers.GenerateUserNoteDetailEmbedAsync(note.Value, modmailMember)).WithColor(0xf03916);
+                        await LogChannelHelper.LogMessageAsync("mod", $"{Program.cfgjson.Emoji.Deleted} Note `{note.Value.NoteId}` was automatically deleted after modmail thread creation (belonging to {modmailMember.Mention})", embed);
                     }
                 }
 
@@ -136,7 +216,7 @@ namespace Cliptok.Events
                         giveawayTitle = StringHelpers.Truncate(giveawayTitle, 100, false);
                     }
 
-                    await message.CreateThreadAsync(giveawayTitle, AutoArchiveDuration.ThreeDays, "Automatically creating giveaway thread.");
+                    await message.CreateThreadAsync(giveawayTitle, DiscordAutoArchiveDuration.ThreeDays, "Automatically creating giveaway thread.");
                 }
 
                 // Skip DMs, external guilds, and messages from bots, beyond this point.
@@ -175,7 +255,7 @@ namespace Cliptok.Events
                     if (message.MentionedUsers.Count > Program.cfgjson.MassMentionBanThreshold)
                     {
                         _ = message.DeleteAsync();
-                        _ = channel.Guild.BanMemberAsync(message.Author.Id, 7, $"Mentioned more than {Program.cfgjson.MassMentionBanThreshold} users in one message.");
+                        _ = channel.Guild.BanMemberAsync(message.Author, TimeSpan.FromDays(7), $"Mentioned more than {Program.cfgjson.MassMentionBanThreshold} users in one message.");
                         string content = $"{Program.cfgjson.Emoji.Banned} {message.Author.Mention} was automatically banned for mentioning **{message.MentionedUsers.Count}** users.";
                         var chatMsg = await channel.SendMessageAsync(content);
                         _ = InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content);
@@ -339,7 +419,7 @@ namespace Cliptok.Events
                         if (
                         GetPermLevel(member) < (ServerPermLevel)Program.cfgjson.InviteTierRequirement
                         && (
-                            invite.Channel.Type == ChannelType.Group
+                            invite.Channel.Type == DiscordChannelType.Group
                             || (
                                 !Program.cfgjson.InviteExclusion.Contains(code)
                                 && !Program.cfgjson.InviteIDExclusion.Contains(invite.Guild.Id)
@@ -481,22 +561,7 @@ namespace Cliptok.Events
                                 DiscordMessage msg = await message.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
                                 var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, message.Channel, " automatically ");
 
-                                string responseToSend = $"```json\n{responseText}\n```";
-                                if (responseToSend.Length > 1940)
-                                {
-                                    try
-                                    {
-                                        HasteBinResult hasteURL = await Program.hasteUploader.Post(responseText);
-                                        if (hasteURL.IsSuccess)
-                                            responseToSend = hasteURL.FullUrl + ".json";
-                                        else
-                                            responseToSend = "Response was too big and Hastebin failed, sorry.";
-                                    }
-                                    catch
-                                    {
-                                        responseToSend = "Response was too big and Hastebin failed, sorry.";
-                                    }
-                                }
+                                string responseToSend = await StringHelpers.CodeOrHasteBinAsync(responseText, "json", 1000, true);
 
                                 (string name, string value, bool inline) extraField = new("API Response", responseToSend, false);
                                 await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, extraField);
@@ -547,7 +612,7 @@ namespace Cliptok.Events
                         string reason = "Too many lines in a single message";
                         _ = message.DeleteAsync();
 
-                        var button = new DiscordButtonComponent(ButtonStyle.Secondary, "line-limit-deleted-message-callback", "View message content", false, null);
+                        var button = new DiscordButtonComponent(DiscordButtonStyle.Secondary, "line-limit-deleted-message-callback", "View message content", false, null);
 
                         if (!Program.db.HashExists("linePardoned", message.Author.Id.ToString()))
                         {
@@ -646,7 +711,7 @@ namespace Cliptok.Events
                         if (title.Length > 100)
                             title = StringHelpers.Truncate(title, 100, false);
 
-                        await message.CreateThreadAsync(title, AutoArchiveDuration.Week, "Automatically creating feedback hub thread.");
+                        await message.CreateThreadAsync(title, DiscordAutoArchiveDuration.Week, "Automatically creating feedback hub thread.");
 
                         await Task.Delay(2000);
                         await message.ModifyEmbedSuppressionAsync(true);

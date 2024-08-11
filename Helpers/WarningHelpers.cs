@@ -4,7 +4,8 @@
     {
         public static async Task<DiscordEmbed> GenerateWarningsEmbedAsync(DiscordUser targetUser)
         {
-            var warningsOutput = Program.db.HashGetAll(targetUser.Id.ToString()).ToDictionary(
+            var warningsOutput = Program.db.HashGetAll(targetUser.Id.ToString())
+                .Where(x => JsonConvert.DeserializeObject<UserWarning>(x.Value).Type == WarningType.Warning).ToDictionary(
                 x => x.Name.ToString(),
                 x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
             );
@@ -130,7 +131,7 @@
             try
             {
                 screeningForm = await guild.GetMembershipScreeningFormAsync();
-                rules = screeningForm.Fields.FirstOrDefault(field => field.Type is MembershipScreeningFieldType.Terms).Values;
+                rules = screeningForm.Fields.FirstOrDefault(field => field.Type is DiscordMembershipScreeningFieldType.Terms).Values;
             }
             catch
             {
@@ -192,9 +193,14 @@
                 DiscordMember member = await guild.GetMemberAsync(targetUser.Id);
                 dmMessage = await member.SendMessageAsync(await GenerateWarningDM(reason, channel.Guild, extraWord));
             }
-            catch
+            catch (Exception e)
             {
-                // We failed to DM the user, this isn't important to note.
+                // We failed to DM the user.
+                // Lets log this if it isn't a known cause.
+                if (e is not DSharpPlus.Exceptions.UnauthorizedException)
+                {
+                    Program.discord.Logger.LogWarning(e, "Failed to send warning DM to user: {user}", targetUser.Id);
+                }
             }
 
             UserWarning warning = new()
@@ -209,7 +215,8 @@
                 {
                     MessageId = contextMessage.Id,
                     ChannelId = contextMessage.ChannelId
-                }
+                },
+                Type = WarningType.Warning
             };
 
             if (dmMessage is not null)
@@ -220,6 +227,10 @@
                 };
 
             Program.db.HashSet(targetUser.Id.ToString(), warning.WarningId, JsonConvert.SerializeObject(warning));
+
+            // If warning is automatic (if responsible moderator is a bot), add to list so the context message can be more-easily deleted later
+            if (modUser.IsBot)
+                Program.db.HashSet("automaticWarnings", warningId, JsonConvert.SerializeObject(warning));
 
             LogChannelHelper.LogMessageAsync("mod",
                 new DiscordMessageBuilder()
@@ -260,6 +271,49 @@
             else if (toMuteHours <= -1)
             {
                 await MuteHelpers.MuteUserAsync(targetUser, $"Automatic permanent mute after {warnsSinceThreshold} warnings in the past {acceptedThreshold} {thresholdSpan}.", modUser.Id, guild, channel);
+            }
+
+            // If warning was not automatic (not issued by a bot) and target user has notes to be shown on warn, alert the responsible moderator
+
+            if (!modUser.IsBot)
+            {
+                // Get notes
+                var notes = Program.db.HashGetAll(targetUser.Id.ToString())
+                    .Where(x => JsonConvert.DeserializeObject<UserNote>(x.Value).Type == WarningType.Note).ToDictionary(
+                        x => x.Name.ToString(),
+                        x => JsonConvert.DeserializeObject<UserNote>(x.Value)
+                    );
+
+                // Get notes set to notify on warn
+                var notesToNotifyFor = notes.Where(x => x.Value.ShowOnWarn).ToDictionary(x => x.Key, x => x.Value);
+
+                // Get relevant notes ('show all mods' is true, or mod is responsible for note & warning)
+                notesToNotifyFor = notesToNotifyFor.Where(x => x.Value.ShowAllMods || x.Value.ModUserId == modUser.Id).ToDictionary(x => x.Key, x => x.Value);
+
+                // Alert moderator if there are relevant notes
+                if (notesToNotifyFor.Count != 0)
+                {
+                    var msg = new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Muted} {modUser.Mention}, {targetUser.Mention} has notes set to show when they are issued a warning!").AddEmbed(await UserNoteHelpers.GenerateUserNotesEmbedAsync(targetUser, true, notesToNotifyFor)).WithAllowedMentions(Mentions.All);
+
+                    // For any notes set to show once, show the full note content in its own embed because it will not be able to be fetched manually
+                    foreach (var note in notesToNotifyFor)
+                        if (msg.Embeds.Count < 10) // Limit to 10 embeds; this probably won't be an issue because we probably won't have that many 'show once' notes
+                            if (note.Value.ShowOnce)
+                                msg.AddEmbed(await UserNoteHelpers.GenerateUserNoteSimpleEmbedAsync(note.Value, targetUser));
+
+                    await LogChannelHelper.LogMessageAsync("investigations", msg);
+                }
+
+                // If any notes were shown & set to show only once, delete them now
+                foreach (var note in notesToNotifyFor.Where(note => note.Value.ShowOnce))
+                {
+                    // Delete note
+                    await Program.db.HashDeleteAsync(targetUser.Id.ToString(), note.Key);
+
+                    // Log deletion to mod-logs channel
+                    var embed = new DiscordEmbedBuilder(await UserNoteHelpers.GenerateUserNoteDetailEmbedAsync(note.Value, targetUser)).WithColor(0xf03916);
+                    await LogChannelHelper.LogMessageAsync("mod", $"{Program.cfgjson.Emoji.Deleted} Note `{note.Value.NoteId}` was automatically deleted after a warning (belonging to {targetUser.Mention})", embed);
+                }
             }
 
             return warning;

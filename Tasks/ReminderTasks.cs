@@ -76,6 +76,7 @@
                         {
                             msg.WithContent($"<@{reminderObject.UserID}>, you asked to be reminded of something:");
                             msg.WithReply(null, false, false);
+                            msg.WithAllowedMentions(Mentions.All);
                             await channel.SendMessageAsync(msg);
                         }
                     }
@@ -86,9 +87,7 @@
                 }
 
             }
-#if DEBUG
             Program.discord.Logger.LogDebug(Program.CliptokEventID, "Checked reminders at {time} with result: {success}", DateTime.Now, success);
-#endif
             return success;
         }
 
