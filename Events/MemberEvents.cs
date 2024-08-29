@@ -6,7 +6,7 @@ namespace Cliptok.Events
     {
         public static async Task GuildMemberAdded(DiscordClient client, GuildMemberAddedEventArgs e)
         {
-            client.Logger.LogDebug("Got a member added event for {member}", e.Member.Id); 
+            client.Logger.LogDebug("Got a member added event for {member}", e.Member.Id);
 
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
@@ -57,7 +57,7 @@ namespace Cliptok.Events
             if (await db.HashExistsAsync("mutes", e.Member.Id))
             {
                 // todo: store per-guild
-                DiscordRole mutedRole = e.Guild.GetRole(cfgjson.MutedRole);
+                DiscordRole mutedRole = await e.Guild.GetRoleAsync(cfgjson.MutedRole);
                 await e.Member.GrantRoleAsync(mutedRole, "Reapplying mute on join: possible mute evasion.");
             }
             else if (e.Member.CommunicationDisabledUntil is not null)
@@ -71,29 +71,6 @@ namespace Cliptok.Events
                 {
                     var _ = BanHelpers.BanSilently(e.Guild, e.Member.Id, "Secret sauce");
                     await LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Banned} Raid-banned {e.Member.Mention} for matching avatar: {e.Member.AvatarUrl.Replace("1024", "128")}");
-                }
-
-                string banDM = $"You have been automatically banned from **{e.Guild.Name}** for matching patterns of known raiders.\n" +
-                    $"Please send an appeal and you will be unbanned as soon as possible: {cfgjson.AppealLink}\n" +
-                    $"The requirements for appeal can be ignored in this case. Sorry for any inconvenience caused.";
-
-                foreach (var IdAutoBanSet in cfgjson.AutoBanIds)
-                {
-                    if (db.HashExists(IdAutoBanSet.Name, e.Member.Id))
-                    {
-                        continue;
-                    }
-
-                    if (e.Member.Id > IdAutoBanSet.LowerBound && e.Member.Id < IdAutoBanSet.UpperBound)
-                    {
-                        await e.Member.SendMessageAsync(banDM);
-
-                        await e.Member.BanAsync(TimeSpan.FromDays(7), "Matching patterns of known raiders, please unban if appealed.");
-
-                        await LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Banned} Automatically appeal-banned {e.Member.Mention} for matching the creation date of the {IdAutoBanSet.Name} DM scam raiders.");
-                    }
-
-                    db.HashSet(IdAutoBanSet.Name, e.Member.Id, true);
                 }
             }
 
@@ -128,8 +105,8 @@ namespace Cliptok.Events
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
 
-            var muteRole = e.Guild.GetRole(cfgjson.MutedRole);
-            var tqsMuteRole = e.Guild.GetRole(cfgjson.TqsMutedRole);
+            var muteRole = await e.Guild.GetRoleAsync(cfgjson.MutedRole);
+            var tqsMuteRole = await e.Guild.GetRoleAsync(cfgjson.TqsMutedRole);
             var userMute = await db.HashGetAsync("mutes", e.Member.Id);
 
             if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) & !e.Member.Roles.Contains(tqsMuteRole))
@@ -209,7 +186,7 @@ namespace Cliptok.Events
             if (await ScamHelpers.UsernameCheckAsync(e.Member))
                 return;
 
-            var muteRole = e.Guild.GetRole(cfgjson.MutedRole);
+            var muteRole = await e.Guild.GetRoleAsync(cfgjson.MutedRole);
             var userMute = await db.HashGetAsync("mutes", e.Member.Id);
 
             // If they're externally unmuted, untrack it?

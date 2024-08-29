@@ -26,6 +26,10 @@
 
         public static string MessageLink(DiscordMessage msg)
         {
+            return MessageLink(new MockDiscordMessage(msg));
+        }
+        public static string MessageLink(MockDiscordMessage msg)
+        {
             return $"https://discord.com/channels/{(msg.Channel.IsPrivate ? "@me" : msg.Channel.Guild.Id)}/{msg.Channel.Id}/{msg.Id}";
         }
 
@@ -165,7 +169,7 @@
                 .WithTitle($"User information for {DiscordHelpers.UniqueUsername(user)}")
                 .AddField("User", member.Mention, true)
                 .AddField("User ID", member.Id.ToString(), true)
-                .AddField($"{Program.discord.CurrentUser.Username} permission level", GetPermLevel(member).ToString(), false);
+                .AddField($"{Program.discord.CurrentUser.Username} permission level", (await GetPermLevelAsync(member)).ToString(), false);
 
             if (!guildNull)
                 embed.AddField("Roles", rolesStr, false);

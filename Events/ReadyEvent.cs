@@ -1,5 +1,4 @@
-﻿using System.Runtime.ExceptionServices;
-using static Cliptok.Program;
+﻿using static Cliptok.Program;
 
 namespace Cliptok.Events
 {
@@ -14,7 +13,8 @@ namespace Cliptok.Events
             {
                 if (!LogChannelHelper.ready)
                     await LogChannelHelper.UnpackLogConfigAsync(cfgjson);
-            } catch (Exception e)
+            }
+            catch (Exception e)
             {
                 client.Logger.LogCritical(e, "Fatal error unpacking log config!");
                 Environment.Exit(1);
@@ -140,7 +140,8 @@ namespace Cliptok.Events
                 $"**Version timestamp**: `{commitTime}`\n**Framework**: `{RuntimeInformation.FrameworkDescription}`\n" +
                 $"**Platform**: `{RuntimeInformation.OSDescription}`\n" +
                 $"**Library**: `DSharpPlus {discord.VersionString}`\n" +
-                $"**List update success**: `{listSuccess}`\n\n" +
+                $"**List update success**: `{listSuccess}`\n" +
+                $"**Log level**: `{cfgjson.LogLevel}`\n\n" +
                 $"Most recent commit message:\n" +
                 $"```\n" +
                 $"{commitMessage}\n" +

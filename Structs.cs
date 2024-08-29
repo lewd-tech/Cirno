@@ -149,12 +149,6 @@
         [JsonProperty("heartosoftId")]
         public ulong HeartosoftId { get; private set; }
 
-        [JsonProperty("noHeartosoftId")]
-        public ulong NoHeartosoftId { get; private set; }
-
-        [JsonProperty("restrictedHeartosoftPhrases")]
-        public List<string> RestrictedHeartosoftPhrases { get; private set; }
-
         [JsonProperty("autoDehoistCharacters")]
         public string AutoDehoistCharacters { get; private set; }
 
@@ -194,9 +188,6 @@
         [JsonProperty("modmailCategory")]
         public ulong ModmailCategory { get; private set; }
 
-        [JsonProperty("autoBanIds")]
-        public List<AutoBanIdSet> AutoBanIds { get; private set; }
-
         [JsonProperty("lineLimit")]
         public int LineLimit { get; private set; }
 
@@ -226,9 +217,6 @@
 
         [JsonProperty("gitListDirectory")]
         public string GitListDirectory { get; private set; }
-
-        [JsonProperty("feedbackHubChannelId")]
-        public ulong FeedbackHubChannelId { get; private set; } = 0;
 
         [JsonProperty("dmLogChannelId")]
         public ulong DmLogChannelId { get; private set; } = 0;
@@ -302,6 +290,14 @@
         [JsonProperty("logLevel")]
         public Level LogLevel { get; private set; } = Level.Information;
 
+        [JsonProperty("lokiURL")]
+        public string LokiURL { get; private set; } = null;
+
+        [JsonProperty("lokiServiceName")]
+        public string LokiServiceName { get; private set; } = null;
+
+        [JsonProperty("voiceChannelPurge")]
+        public bool VoiceChannelPurge { get; private set; } = true;
     }
 
     public enum Level { Information, Warning, Error, Debug, Verbose }
@@ -355,19 +351,6 @@
         [JsonProperty("channelId")]
         public ulong? ChannelId { get; private set; }
     }
-
-    public class AutoBanIdSet
-    {
-        [JsonProperty("name")]
-        public string Name { get; private set; }
-
-        [JsonProperty("upperBound")]
-        public ulong UpperBound { get; private set; }
-
-        [JsonProperty("lowerBound")]
-        public ulong LowerBound { get; private set; }
-    }
-
     public class EmojiJson
     {
         [JsonProperty("noPermissions")]
@@ -615,7 +598,7 @@
     {
         [JsonProperty("channelId")]
         public ulong ChannelId { get; set; }
-        
+
         [JsonProperty("overwrite")]
         public MockUserOverwrite Overwrite { get; set; }
     }
@@ -624,10 +607,10 @@
     {
         [JsonProperty("type")]
         public int Type { get; } = 1;
-        
+
         [JsonProperty("allow")]
         public DiscordPermissions Allowed { get; set; }
-        
+
         [JsonProperty("deny")]
         public DiscordPermissions Denied { get; set; }
 

@@ -23,7 +23,6 @@
     "FjJfTZdtXg",
     "cMxFErsEDB",
     "apple",
-    "iphone",
     "directx",
     "winadmins",
     "minecraft",
@@ -138,17 +137,12 @@
       692716426544414770
   ],
   "heartosoftId": 413429915187281940,
-  "noHeartosoftId": 642508756189446165,
-  "restrictedHeartosoftPhrases": [
-  ],
   "autoDehoistCharacters": " !\"#$%&'()*+,-./:;<=>?@[\\]^_`'",
   "secondaryAutoDehoistCharacters": "0123456789",
   "hastebinEndpoint": "https://haste.erisa.uk",
   "userRoles": {
   },
   "modmailCategory": 536572162450915340,
-  "autobanIds": [
-  ],
   "lineLimit": 30,
   "increasedLineLimit": 6000,
   "lineLimitTier": 0,
@@ -216,5 +210,8 @@
   "tqsMutedRole": 752821045408563230,
   "tqsMuteDurationHours": 2,
   "autoWarnMsgAutoDeleteDays": 3,
-  "logLevel": "Debug"
+  "logLevel": "Debug",
+  "lokiURL": "http://100.79.19.82:3100",
+  "lokiServiceName": "cliptok",
+  "voiceChannelPurge":  true
 }
