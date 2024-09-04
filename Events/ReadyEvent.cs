@@ -42,7 +42,7 @@ namespace Cliptok.Events
                 }
             }
 
-            client.Logger.LogInformation(CliptokEventID, "Logged in as {user}", $"{DiscordHelpers.UniqueUsername(client.CurrentUser)}");
+            client.Logger.LogDebug(CliptokEventID, "Ready event: logged in as {user}", $"{DiscordHelpers.UniqueUsername(client.CurrentUser)}");
         }
 
         public static async Task OnStartup(DiscordClient client)
@@ -167,9 +167,9 @@ namespace Cliptok.Events
                 {
                     discord.Logger.LogError("Heartbeat ping sent: {status} {content}", (int)response.StatusCode, await response.Content.ReadAsStringAsync());
                 }
-                return;
             }
 
+            client.Logger.LogInformation(CliptokEventID, "Startup event complete, logged in as {user}", $"{DiscordHelpers.UniqueUsername(client.CurrentUser)}");
         }
 
     }
