@@ -279,7 +279,7 @@
         public ulong InsiderCanaryThread { get; set; } = 0;
 
         [JsonProperty("tqsMutedRole")]
-        public ulong TqsMutedRole { get; private set; }
+        public ulong TqsMutedRole { get; private set; } = 0;
 
         [JsonProperty("tqsMuteDurationHours")]
         public int TqsMuteDurationHours { get; private set; }
@@ -298,6 +298,9 @@
 
         [JsonProperty("voiceChannelPurge")]
         public bool VoiceChannelPurge { get; private set; } = true;
+        
+        [JsonProperty("forumChannelAutoWarnFallbackChannel")]
+        public ulong ForumChannelAutoWarnFallbackChannel { get; private set; } = 0;
     }
 
     public enum Level { Information, Warning, Error, Debug, Verbose }

@@ -57,11 +57,14 @@ namespace Cliptok
         public static Random rand = new();
         public static HasteBinClient hasteUploader;
 
-        public static StringWriter outputCapture = new();
+        public static StringBuilder outputStringBuilder = new(16, 200000000);
+        public static StringWriter outputCapture;
 
         static public readonly HttpClient httpClient = new();
 
         public static List<ServerApiResponseJson> serverApiList = new();
+        
+        public static DiscordChannel ForumChannelAutoWarnFallbackChannel;
 
         public static void UpdateLists()
         {
@@ -75,6 +78,7 @@ namespace Cliptok
         static async Task Main(string[] _)
         {
             Console.OutputEncoding = Encoding.UTF8;
+            outputCapture = new(outputStringBuilder);
 
             httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             var logFormat = "[{Timestamp:yyyy-MM-dd HH:mm:ss zzz}] [{Level}] {Message}{NewLine}{Exception}";
@@ -237,6 +241,9 @@ namespace Cliptok
             await discord.ConnectAsync();
 
             await ReadyEvent.OnStartup(discord);
+            
+            if (cfgjson.ForumChannelAutoWarnFallbackChannel != 0)
+                ForumChannelAutoWarnFallbackChannel = await discord.GetChannelAsync(cfgjson.ForumChannelAutoWarnFallbackChannel);
 
             // Only wait 3 seconds before the first set of tasks.
             await Task.Delay(3000);
