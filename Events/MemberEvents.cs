@@ -11,7 +11,7 @@ namespace Cliptok.Events
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
 
-            var embed = new DiscordEmbedBuilder()
+            var userLogEmbed = new DiscordEmbedBuilder()
                .WithColor(new DiscordColor(0x3E9D28))
                .WithTimestamp(DateTimeOffset.Now)
                .WithThumbnail(e.Member.AvatarUrl)
@@ -24,18 +24,20 @@ namespace Cliptok.Events
                .AddField("Action", "Joined the server", false)
                .WithFooter($"{client.CurrentUser.Username}JoinEvent");
 
-            LogChannelHelper.LogMessageAsync("users", $"{cfgjson.Emoji.UserJoin} **Member joined the server!** - {e.Member.Id}", embed);
+            LogChannelHelper.LogMessageAsync("users", $"{cfgjson.Emoji.UserJoin} **Member joined the server!** - {e.Member.Id}", userLogEmbed);
 
-            var joinWatchlist = await db.ListRangeAsync("joinWatchedUsers");
+            // Get this user's notes that are set to show on join/leave
+            var userNotes = db.HashGetAll(e.Member.Id.ToString())
+                .Where(x => JsonConvert.DeserializeObject<UserNote>(x.Value).Type == WarningType.Note
+                        && JsonConvert.DeserializeObject<UserNote>(x.Value).ShowOnJoinAndLeave).ToDictionary(
+                    x => x.Name.ToString(),
+                    x => JsonConvert.DeserializeObject<UserNote>(x.Value)
+                );
 
-            if (joinWatchlist.Contains(e.Member.Id))
+            if (userNotes.Count > 0)
             {
-                if (await db.HashExistsAsync("joinWatchedUsersNotes", e.Member.Id))
-                {
-                    embed.AddField($"Joinwatch Note", await db.HashGetAsync("joinWatchedUsersNotes", e.Member.Id));
-                }
-
-                LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Warning} Watched user {e.Member.Mention} just joined the server!", embed);
+                var notesEmbed = await UserNoteHelpers.GenerateUserNotesEmbedAsync(e.Member, false, userNotes);
+                LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Warning} {e.Member.Mention} just joined the server with notes set to show on join!", notesEmbed);
             }
 
             if (db.HashExists("raidmode", e.Guild.Id))
@@ -105,33 +107,43 @@ namespace Cliptok.Events
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
 
-            var muteRole = await e.Guild.GetRoleAsync(cfgjson.MutedRole);
+            // Attempt to check if member is cached
+            bool isMemberCached = client.Guilds[e.Guild.Id].Members.ContainsKey(e.Member.Id);
 
-            DiscordRole tqsMuteRole = default;
-            if (cfgjson.TqsMutedRole != 0)
-                tqsMuteRole = await e.Guild.GetRoleAsync(cfgjson.TqsMutedRole);
-
-            var userMute = await db.HashGetAsync("mutes", e.Member.Id);
-
-            if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) & !e.Member.Roles.Contains(tqsMuteRole))
-                db.HashDeleteAsync("mutes", e.Member.Id);
-
-            if ((e.Member.Roles.Contains(muteRole) || e.Member.Roles.Contains(tqsMuteRole)) && userMute.IsNull)
+            if (isMemberCached)
             {
-                MemberPunishment newMute = new()
+                // Only check mute role against db entry if we know the member's roles are accurate.
+                // If the member is not cached, we will think they have no roles when they might actually be muted!
+                // Then we would be falsely removing their mute entry.
+
+                var muteRole = await e.Guild.GetRoleAsync(cfgjson.MutedRole);
+
+                DiscordRole tqsMuteRole = default;
+                if (cfgjson.TqsMutedRole != 0)
+                    tqsMuteRole = await e.Guild.GetRoleAsync(cfgjson.TqsMutedRole);
+
+                var userMute = await db.HashGetAsync("mutes", e.Member.Id);
+
+                if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) & !e.Member.Roles.Contains(tqsMuteRole))
+                    db.HashDeleteAsync("mutes", e.Member.Id);
+
+                if ((e.Member.Roles.Contains(muteRole) || e.Member.Roles.Contains(tqsMuteRole)) && userMute.IsNull)
                 {
-                    MemberId = e.Member.Id,
-                    ModId = discord.CurrentUser.Id,
-                    ServerId = e.Guild.Id,
-                    ExpireTime = null,
-                    ActionTime = DateTime.Now
-                };
+                    MemberPunishment newMute = new()
+                    {
+                        MemberId = e.Member.Id,
+                        ModId = discord.CurrentUser.Id,
+                        ServerId = e.Guild.Id,
+                        ExpireTime = null,
+                        ActionTime = DateTime.Now
+                    };
 
-                db.HashSetAsync("mutes", e.Member.Id, JsonConvert.SerializeObject(newMute));
+                    db.HashSetAsync("mutes", e.Member.Id, JsonConvert.SerializeObject(newMute));
+                }
+
+                if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) && !e.Member.Roles.Contains(tqsMuteRole))
+                    db.HashDeleteAsync("mutes", e.Member.Id);
             }
-
-            if (!userMute.IsNull && !e.Member.Roles.Contains(muteRole) && !e.Member.Roles.Contains(tqsMuteRole))
-                db.HashDeleteAsync("mutes", e.Member.Id);
 
             string rolesStr = "None";
 
@@ -145,7 +157,7 @@ namespace Cliptok.Events
                 }
             }
 
-            var embed = new DiscordEmbedBuilder()
+            var userLogEmbed = new DiscordEmbedBuilder()
                 .WithColor(new DiscordColor(0xBA4119))
                 .WithTimestamp(DateTimeOffset.Now)
                 .WithThumbnail(e.Member.AvatarUrl)
@@ -159,18 +171,21 @@ namespace Cliptok.Events
                 .AddField("Roles", rolesStr)
                 .WithFooter($"{client.CurrentUser.Username}LeaveEvent");
 
-            LogChannelHelper.LogMessageAsync("users", $"{cfgjson.Emoji.UserLeave} **Member left the server!** - {e.Member.Id}", embed);
+            LogChannelHelper.LogMessageAsync("users", $"{cfgjson.Emoji.UserLeave} **Member left the server!** - {e.Member.Id}", userLogEmbed);
 
-            var joinWatchlist = await db.ListRangeAsync("joinWatchedUsers");
-
-            if (joinWatchlist.Contains(e.Member.Id))
+            // Get this user's notes that are set to show on join/leave
+            var userNotes = db.HashGetAll(e.Member.Id.ToString())
+                .Where(x => JsonConvert.DeserializeObject<UserNote>(x.Value).Type == WarningType.Note
+                            && JsonConvert.DeserializeObject<UserNote>(x.Value).ShowOnJoinAndLeave).ToDictionary(
+                    x => x.Name.ToString(),
+                    x => JsonConvert.DeserializeObject<UserNote>(x.Value)
+                );
+            
+            DiscordEmbed notesEmbed;
+            if (userNotes.Count > 0)
             {
-                if (await db.HashExistsAsync("joinWatchedUsersNotes", e.Member.Id))
-                {
-                    embed.AddField($"Joinwatch Note", await db.HashGetAsync("joinWatchedUsersNotes", e.Member.Id));
-                }
-
-                LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Warning} Watched user {e.Member.Mention} just left the server!", embed);
+                notesEmbed = await UserNoteHelpers.GenerateUserNotesEmbedAsync(e.Member, false, userNotes);
+                LogChannelHelper.LogMessageAsync("investigations", $"{cfgjson.Emoji.Warning} {e.Member.Mention} just left the server with notes set to show on leave!", notesEmbed);
             }
         }
 

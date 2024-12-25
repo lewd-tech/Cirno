@@ -142,19 +142,26 @@ namespace Cliptok.Events
                 {
                     if (Program.db.SetContains("trackedUsers", message.Author.Id))
                     {
-                        DiscordThreadChannel relayThread;
-
-                        if (trackingThreadCache.ContainsKey(message.Author.Id))
+                        // Check current channel against tracking channels
+                        var trackingChannels = await Program.db.HashGetAsync("trackingChannels", message.Author.Id);
+                        if (trackingChannels.HasValue)
                         {
-                            relayThread = trackingThreadCache[message.Author.Id];
+                            var trackingChannelsList = JsonConvert.DeserializeObject<List<ulong>>(trackingChannels);
+                            if (trackingChannelsList.Count > 0)
+                            {
+                                // This user's tracking is filtered to channels; check the channel before relaying the msg to the tracking thread
+                                var channels = JsonConvert.DeserializeObject<List<ulong>>(trackingChannels);
+                                if (channels.Contains(channel.Id) || channels.Contains(channel.Parent.Id))
+                                {
+                                    await RelayTrackedMessageAsync(client, message);
+                                }
+                            }
+                            else
+                            {
+                                // This user's tracking is not filtered to channels, so just relay the msg to the tracking thread
+                                await RelayTrackedMessageAsync(client, message);
+                            }
                         }
-                        else
-                        {
-                            relayThread = (DiscordThreadChannel)await client.GetChannelAsync((ulong)await Program.db.HashGetAsync("trackingThreads", message.Author.Id));
-                            trackingThreadCache.Add(message.Author.Id, relayThread);
-                        }
-                        var _ = await relayThread.SendMessageAsync(await DiscordHelpers.GenerateMessageRelay(message.BaseMessage, true, true));
-
                     }
 
                     if (!isAnEdit && channel.IsPrivate && Program.cfgjson.LogChannels.ContainsKey("dms"))
@@ -378,7 +385,7 @@ namespace Cliptok.Events
                             // still warn anyway
                         }
 
-                        DiscordMessage msg = await WarningHelpers.SendPublicWarningMessageAndDeleteInfringingMessageAsync(message, $"{{Program.cfgjson.Emoji.Denied}} {{message.Author.Mention}} was automatically warned: **{{reason.Replace(\"`\", \"\\\\`\").Replace(\"*\", \"\\\\*\")}}**", wasAutoModBlock, 1);
+                        DiscordMessage msg = await WarningHelpers.SendPublicWarningMessageAndDeleteInfringingMessageAsync(message, $"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**", wasAutoModBlock, 1);
                         var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, channel, " automatically ");
                         await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, wasAutoModBlock: wasAutoModBlock);
                         match = true;
@@ -640,7 +647,10 @@ namespace Cliptok.Events
                     }
 
                     // attempted to ping @everyone/@here
-                    if (Program.cfgjson.EveryoneFilter && !member.Roles.Any(role => Program.cfgjson.EveryoneExcludedRoles.Contains(role.Id)) && !Program.cfgjson.EveryoneExcludedChannels.Contains(channel.Id) && (message.Content.Contains("@everyone") || message.Content.Contains("@here")))
+                    var msgContent = message.Content;
+                    foreach (var letter in Checks.ListChecks.alphabetMap)
+                        msgContent = msgContent.Replace(letter.Key, letter.Value);
+                    if (Program.cfgjson.EveryoneFilter && !member.Roles.Any(role => Program.cfgjson.EveryoneExcludedRoles.Contains(role.Id)) && !Program.cfgjson.EveryoneExcludedChannels.Contains(channel.Id) && (msgContent.Contains("@everyone") || msgContent.Contains("@here")))
                     {
                         if (wasAutoModBlock)
                         {
@@ -934,6 +944,29 @@ namespace Cliptok.Events
             {
                 return false;
             }
+        }
+        
+        private static async Task RelayTrackedMessageAsync(DiscordClient client, DiscordMessage message)
+        {
+            await RelayTrackedMessageAsync(client, new MockDiscordMessage(message));
+        }
+        private static async Task RelayTrackedMessageAsync(DiscordClient client, MockDiscordMessage message)
+        {
+            DiscordThreadChannel relayThread;
+
+            if (trackingThreadCache.ContainsKey(message.Author.Id))
+            {
+                relayThread = trackingThreadCache[message.Author.Id];
+            }
+            else
+            {
+                relayThread = (DiscordThreadChannel)await client.GetChannelAsync(
+                    (ulong)await Program.db.HashGetAsync("trackingThreads", message.Author.Id));
+                trackingThreadCache.Add(message.Author.Id, relayThread);
+            }
+
+            var _ = await relayThread.SendMessageAsync(
+                await DiscordHelpers.GenerateMessageRelay(message.BaseMessage, true, true));
         }
 
     }

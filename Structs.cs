@@ -301,6 +301,9 @@
         
         [JsonProperty("forumChannelAutoWarnFallbackChannel")]
         public ulong ForumChannelAutoWarnFallbackChannel { get; private set; } = 0;
+        
+        [JsonProperty("rulesAllowedPublicChannels")]
+        public List<ulong> RulesAllowedPublicChannels { get; private set; } = new();
     }
 
     public enum Level { Information, Warning, Error, Debug, Verbose }
@@ -486,9 +489,6 @@
 
         [JsonProperty("giveaways")]
         public ulong Giveaways { get; private set; }
-
-        [JsonProperty("insider10beta")]
-        public ulong Insider10Beta { get; private set; }
     }
 
     public class PhishingRequestBody
@@ -586,6 +586,9 @@
 
         [JsonProperty("showOnce")]
         public bool ShowOnce { get; set; }
+
+        [JsonProperty("showOnJoinAndLeave")]
+        public bool ShowOnJoinAndLeave { get; set; }
 
         [JsonProperty("noteId")]
         public long NoteId { get; set; }

@@ -4,7 +4,7 @@
     {
         [SlashCommand("announcebuild", "Announce a Windows Insider build in the current channel.", defaultPermission: false)]
         [SlashRequireHomeserverPerm(ServerPermLevel.TrialModerator)]
-        [SlashCommandPermissions(DiscordPermissions.ModerateMembers)]
+        [SlashCommandPermissions(permissions: DiscordPermission.ModerateMembers)]
         public async Task AnnounceBuildSlashCommand(InteractionContext ctx,
             [Choice("Windows 10", 10)]
             [Choice("Windows 11", 11)]
@@ -45,11 +45,9 @@
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Both insider channels cannot be the same! Simply set one instead.", ephemeral: true);
             }
 
-            List<string> validWindows10Channels = ["RP", "Beta", ""];
-
-            if (windowsVersion == 10 && (!validWindows10Channels.Contains(insiderChannel1) || !validWindows10Channels.Contains(insiderChannel2)))
+            if (windowsVersion == 10 && insiderChannel1 != "RP")
             {
-                await ctx.RespondAsync(text: $"{Program.cfgjson.Emoji.Error} Windows 10 only has Release Preview and Beta Channels.", ephemeral: true);
+                await ctx.RespondAsync(text: $"{Program.cfgjson.Emoji.Error} Windows 10 only has a Release Preview Channel.", ephemeral: true);
                 return;
             }
 
