@@ -38,6 +38,9 @@
 
                 return false;
             }
+            
+            if (targetMember.MemberFlags.Value.HasFlag(DiscordMemberFlags.AutomodQuarantinedUsername))
+                return false;
 
             try
             {
@@ -48,8 +51,10 @@
                 });
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                if (ex is DSharpPlus.Exceptions.BadRequestException)
+                    Program.discord.Logger.LogInformation(Program.CliptokEventID, "Failed to dehoist member {memberId}! Discord said Bad Request. If this member's nickname is in violation of AutoMod rules, this is expected!", targetMember.Id);
                 return false;
             }
         }
@@ -76,7 +81,7 @@
             // If member is dehoisted already, but NOT permadehoisted, skip updating nickname.
 
             // If member is not dehoisted
-            if (discordMember.DisplayName[0] != dehoistCharacter)
+            if (discordMember.DisplayName[0] != dehoistCharacter && !discordMember.MemberFlags.Value.HasFlag(DiscordMemberFlags.AutomodQuarantinedUsername))
             {
                 // Dehoist member
                 try
@@ -129,7 +134,7 @@
                 }
 
                 // Un-dehoist member
-                if (discordMember.DisplayName[0] == dehoistCharacter)
+                if (discordMember.DisplayName[0] == dehoistCharacter && !discordMember.MemberFlags.Value.HasFlag(DiscordMemberFlags.AutomodQuarantinedUsername))
                 {
                     var newNickname = discordMember.DisplayName[1..];
                     try
@@ -164,6 +169,20 @@
                 var (success, isPermissionError) = await PermadehoistMember(discordUser, responsibleMod, guild);
                 return (success, isPermissionError, true);
             }
+        }
+
+        public static async Task<(int totalMembers, int failedMembers)> MassDehoistAsync(DiscordGuild guild)
+        {
+            var discordMembers = await guild.GetAllMembersAsync().ToListAsync();
+            int failedCount = 0;
+
+            foreach (DiscordMember discordMember in discordMembers)
+            {
+                bool success = await CheckAndDehoistMemberAsync(discordMember, Program.discord.CurrentUser, true);
+                if (!success)
+                    failedCount++;
+            }
+            return (discordMembers.Count, failedCount);
         }
     }
 }

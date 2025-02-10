@@ -32,7 +32,7 @@ namespace Cliptok.Events
             }
             else if (e.Id == "clear-confirm-callback")
             {
-                Dictionary<ulong, List<DiscordMessage>> messagesToClear = Commands.InteractionCommands.ClearInteractions.MessagesToClear;
+                Dictionary<ulong, List<DiscordMessage>> messagesToClear = Commands.ClearCmds.MessagesToClear;
 
                 if (!messagesToClear.ContainsKey(e.Message.Id))
                 {
@@ -70,7 +70,7 @@ namespace Cliptok.Events
             {
                 await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
 
-                var overridesPendingAddition = Commands.Debug.OverridesPendingAddition;
+                var overridesPendingAddition = Commands.DebugCmds.OverridesPendingAddition;
                 if (!overridesPendingAddition.ContainsKey(e.Message.Id))
                 {
                     await e.Channel.SendMessageAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Error} {e.User.Mention}, this action has already been completed!").WithReply(e.Message.Id));
@@ -109,8 +109,16 @@ namespace Cliptok.Events
                     if (overwrites.ContainsKey(channelId.ToString()))
                     {
                         // Require extra confirmation for merging permissions!
+                        var currentAllowedPerms = (overwrites[channelId.ToString()].Allowed).ToString("name");
+                        if (string.IsNullOrWhiteSpace(currentAllowedPerms))
+                            currentAllowedPerms = "None";
+                        
+                        var currentDeniedPerms = (overwrites[channelId.ToString()].Denied).ToString("name");
+                        if (string.IsNullOrWhiteSpace(currentDeniedPerms))
+                            currentDeniedPerms = "None";
+                        
                         var mergeConfirmResponse = new DiscordMessageBuilder()
-                            .WithContent($"{cfgjson.Emoji.Warning} **Caution:** This user already has an override for <#{channelId}>! Do you want to merge the permissions? Here are their **current** permissions:\n**Allowed:** {overwrites[channelId.ToString()].Allowed}\n**Denied:** {overwrites[channelId.ToString()].Denied}")
+                            .WithContent($"{cfgjson.Emoji.Warning} **Caution:** This user already has an override for <#{channelId}>! Do you want to merge the permissions? Here are their **current** permissions:\n**Allowed:** {currentAllowedPerms}\n**Denied:** {currentDeniedPerms}")
                             .AddComponents(new DiscordButtonComponent(DiscordButtonStyle.Danger, "debug-overrides-add-merge-confirm-callback", "Merge"), new DiscordButtonComponent(DiscordButtonStyle.Primary, "debug-overrides-add-cancel-callback", "Cancel"));
 
                         await e.Message.ModifyAsync(mergeConfirmResponse);
@@ -128,13 +136,21 @@ namespace Cliptok.Events
                 overridesPendingAddition.Remove(e.Message.Id);
 
                 // Respond
-                await e.Message.ModifyAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Success} Successfully added the following override for <@{newOverwrite.Id}> to <#{pendingOverride.ChannelId}>!\n**Allowed:** {newOverwrite.Allowed}\n**Denied:** {newOverwrite.Denied}"));
+                var allowedPermsStr = newOverwrite.Allowed.ToString("name");
+                if (string.IsNullOrWhiteSpace(allowedPermsStr))
+                    allowedPermsStr = "None";
+                
+                var deniedPermsStr = newOverwrite.Denied.ToString("name");
+                if (string.IsNullOrWhiteSpace(deniedPermsStr))
+                    deniedPermsStr = "None";
+                
+                await e.Message.ModifyAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Success} Successfully added the following override for <@{newOverwrite.Id}> to <#{pendingOverride.ChannelId}>!\n**Allowed:** {allowedPermsStr}\n**Denied:** {deniedPermsStr}"));
             }
             else if (e.Id == "debug-overrides-add-cancel-callback")
             {
                 await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
 
-                var overridesPendingAddition = Commands.Debug.OverridesPendingAddition;
+                var overridesPendingAddition = Commands.DebugCmds.OverridesPendingAddition;
                 if (!overridesPendingAddition.ContainsKey(e.Message.Id))
                 {
                     await e.Channel.SendMessageAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Error} {e.User.Mention}, this action has already been completed!").WithReply(e.Message.Id));
@@ -157,7 +173,7 @@ namespace Cliptok.Events
 
                 await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
 
-                var overridesPendingAddition = Commands.Debug.OverridesPendingAddition;
+                var overridesPendingAddition = Commands.DebugCmds.OverridesPendingAddition;
                 if (!overridesPendingAddition.ContainsKey(e.Message.Id))
                 {
                     await e.Channel.SendMessageAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Error} {e.User.Mention}, this action has already been completed!").WithReply(e.Message.Id));
@@ -198,7 +214,192 @@ namespace Cliptok.Events
                 await db.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
 
                 // Respond
-                await e.Message.ModifyAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Success} Override successfully added. <@{newOverwrite.Id}> already had an override in <#{pendingOverride.ChannelId}>, so here are their new permissions:\n**Allowed:** {newOverwrite.Allowed}\n**Denied:** {newOverwrite.Denied}"));
+                var allowedPermsStr = newOverwrite.Allowed.ToString("name");
+                if (string.IsNullOrWhiteSpace(allowedPermsStr))
+                    allowedPermsStr = "None";
+                
+                var deniedPermsStr = newOverwrite.Denied.ToString("name");
+                if (string.IsNullOrWhiteSpace(deniedPermsStr))
+                    deniedPermsStr = "None";
+                
+                await e.Message.ModifyAsync(new DiscordMessageBuilder().WithContent($"{cfgjson.Emoji.Success} Override successfully added. <@{newOverwrite.Id}> already had an override in <#{pendingOverride.ChannelId}>, so here are their new permissions:\n**Allowed:** {allowedPermsStr}\n**Denied:** {deniedPermsStr}"));
+            }
+            else if (e.Id == "insiders-info-roles-menu-callback")
+            {
+                // Shows a menu in #insider-info that allows a user to toggle their Insider roles
+                
+                // Defer interaction
+                await e.Interaction.DeferAsync(ephemeral: true);
+                
+                // Fetch member
+                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                
+                // Fetch Insider roles to check whether member already has them
+                var insiderCanaryRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderCanary);
+                var insiderDevRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderDev);
+                var insiderBetaRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderBeta);
+                var insiderRPRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderRP);
+                var insider10RPRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.Insider10RP);
+                var patchTuesdayRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.PatchTuesday);
+                
+                // Show menu with current Insider roles, apply new roles based on user selection
+                var menu = new DiscordSelectComponent("insiders-info-roles-menu-response-callback", "Choose your Insider roles",
+                    new List<DiscordSelectComponentOption>()
+                    {
+                        new("Windows 11 Canary channel", "insiders-info-w11-canary", isDefault: member.Roles.Contains(insiderCanaryRole)),
+                        new("Windows 11 Dev channel", "insiders-info-w11-dev", isDefault: member.Roles.Contains(insiderDevRole)),
+                        new("Windows 11 Beta channel", "insiders-info-w11-beta", isDefault: member.Roles.Contains(insiderBetaRole)),
+                        new("Windows 11 Release Preview channel", "insiders-info-w11-rp", isDefault: member.Roles.Contains(insiderRPRole)),
+                        new("Windows 10 Release Preview channel", "insiders-info-w10-rp", isDefault: member.Roles.Contains(insider10RPRole)),
+                        new("Patch Tuesday", "insiders-info-pt", isDefault: member.Roles.Contains(patchTuesdayRole)),
+                    }, minOptions: 0, maxOptions: 6);
+                
+                var builder = new DiscordFollowupMessageBuilder()
+                    .WithContent($"{cfgjson.Emoji.Insider} Use the menu below to toggle your Insider roles!")
+                    .AddComponents(menu)
+                    .AsEphemeral(true);
+                
+                await e.Interaction.CreateFollowupMessageAsync(builder);
+            }
+            else if (e.Id == "insiders-info-roles-menu-response-callback")
+            {
+                // User has selected new Insider roles w/ menu above
+                // Compare selection against current roles; add or remove roles as necessary to match selection
+                
+                // Defer
+                await e.Interaction.DeferAsync(ephemeral: true);
+                
+                // Get member
+                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                
+                // Map role select options to role IDs
+                var insiderRoles = new Dictionary<string, ulong>
+                {
+                    { "insiders-info-w11-canary", cfgjson.UserRoles.InsiderCanary },
+                    { "insiders-info-w11-dev", cfgjson.UserRoles.InsiderDev },
+                    { "insiders-info-w11-beta", cfgjson.UserRoles.InsiderBeta },
+                    { "insiders-info-w11-rp", cfgjson.UserRoles.InsiderRP },
+                    { "insiders-info-w10-rp", cfgjson.UserRoles.Insider10RP },
+                    { "insiders-info-pt", cfgjson.UserRoles.PatchTuesday }
+                };
+                
+                // Get a list of the member's current roles that we can add to or remove from
+                // Then we can apply this in a single request with member.ModifyAsync to avoid making repeated member update requests
+                List<DiscordRole> memberRoles = member.Roles.ToList();
+                
+                var selection = e.Values.Select(x => insiderRoles[x]).ToList();
+                
+                foreach (var roleId in insiderRoles.Values)
+                {
+                    var role = await e.Guild.GetRoleAsync(roleId);
+                    
+                    if (selection.Contains(roleId))
+                    {
+                        // Member should have the role
+                        if (!memberRoles.Contains(role))
+                            memberRoles.Add(role);
+                    }
+                    else
+                    {
+                        // Member should not have the role
+                        if (memberRoles.Contains(role))
+                            memberRoles.Remove(role);
+                    }
+                }
+                
+                // Apply roles
+                await member.ModifyAsync(x => x.Roles = memberRoles);
+                
+                await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent($"{cfgjson.Emoji.Success} Your Insider roles have been updated!").AsEphemeral(true));
+            }
+            else if (e.Id == "insiders-info-chat-btn-callback")
+            {
+                // Button in #insiders-info that checks whether user has 'insiderChat' role and asks them to confirm granting/revoking it
+                
+                // Defer
+                await e.Interaction.DeferAsync(ephemeral: true);
+                
+                // Get member
+                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                
+                // Get insider chat role
+                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderChat);
+                
+                // Check whether member already has any insider roles
+                var insiderRoles = new List<ulong>()
+                {
+                    cfgjson.UserRoles.InsiderCanary,
+                    cfgjson.UserRoles.InsiderDev,
+                    cfgjson.UserRoles.InsiderBeta,
+                    cfgjson.UserRoles.InsiderRP,
+                    cfgjson.UserRoles.Insider10RP,
+                    cfgjson.UserRoles.PatchTuesday
+                };
+                if (member.Roles.Any(x => insiderRoles.Contains(x.Id)))
+                {
+                    // Member already has an insider role, thus already has access to #insiders
+                    // No need for the chat role too
+                    
+                    string insidersMention;
+                    if (cfgjson.InsidersChannel == 0)
+                        insidersMention = "#insiders";
+                    else
+                        insidersMention = $"<#{cfgjson.InsidersChannel}>";
+
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"You already have Insider roles, so you already have access to chat in {insidersMention}!")
+                        .AsEphemeral(true));
+                    
+                    return;
+                }
+                
+                if (member.Roles.Contains(insiderChatRole))
+                {
+                    // Member already has the role
+                    // Ask them if they'd like to remove it
+                    var confirmResponse = new DiscordFollowupMessageBuilder()
+                        .WithContent($"{cfgjson.Emoji.Warning} You already have the {insiderChatRole.Mention} role! Would you like to remove it?")
+                        .AddComponents(new DiscordButtonComponent(DiscordButtonStyle.Danger, "insiders-info-chat-btn-remove-confirm-callback", "Remove"));
+                    
+                    await e.Interaction.CreateFollowupMessageAsync(confirmResponse);
+                }
+                else
+                {
+                    // Member does not have the role; show a confirmation message with a button that will give it to them
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{cfgjson.Emoji.Warning} Please note that <#{cfgjson.InsidersChannel}> is **not for tech support**! If you need tech support, please ask in the appropriate channels instead. Press the button to acknowledge this and get the {insiderChatRole.Mention} role.")
+                        .AddComponents(new DiscordButtonComponent(DiscordButtonStyle.Secondary, "insiders-info-chat-btn-confirm-callback", "I understand")));
+                }
+            }
+            else if (e.Id == "insiders-info-chat-btn-confirm-callback")
+            {
+                // Confirmation for granting insiderChat role, see above
+                
+                // Defer
+                await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
+                
+                // Give member insider chat role
+                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderChat);
+                await member.GrantRoleAsync(insiderChatRole);
+                
+                // Respond
+                await e.Interaction.EditFollowupMessageAsync(e.Message.Id, new DiscordWebhookBuilder().WithContent($"{cfgjson.Emoji.Success} You have been given the {insiderChatRole.Mention} role!"));
+            }
+            else if (e.Id == "insiders-info-chat-btn-remove-confirm-callback")
+            {
+                // Confirmation for revoking insiderChat role, see above
+                
+                // Defer
+                await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
+                
+                // Get member
+                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                
+                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderChat);
+                await member.RevokeRoleAsync(insiderChatRole);
+                
+                await e.Interaction.EditFollowupMessageAsync(e.Message.Id, new DiscordWebhookBuilder().WithContent($"{cfgjson.Emoji.Success} You have been removed from the {insiderChatRole.Mention} role!"));
             }
             else
             {
@@ -207,54 +408,27 @@ namespace Cliptok.Events
 
         }
 
-        public static async Task SlashCommandErrorEvent(SlashCommandsExtension _, DSharpPlus.SlashCommands.EventArgs.SlashCommandErrorEventArgs e)
+        public static async Task SlashCommandErrored(CommandErroredEventArgs e)
         {
-            if (e.Exception is SlashExecutionChecksFailedException slex)
+            if (e.Exception is ChecksFailedException slex)
             {
-                foreach (var check in slex.FailedChecks)
-                    if (check is SlashRequireHomeserverPermAttribute att && e.Context.CommandName != "edit")
+                foreach (var check in slex.Errors)
+                    if (check.ContextCheckAttribute is RequireHomeserverPermAttribute att && e.Context.Command.Name != "edit")
                     {
                         var level = (await GetPermLevelAsync(e.Context.Member));
                         var levelText = level.ToString();
                         if (level == ServerPermLevel.Nothing && rand.Next(1, 100) == 69)
                             levelText = $"naught but a thing, my dear human. Congratulations, you win {rand.Next(1, 10)} bonus points.";
 
-                        await e.Context.CreateResponseAsync(
-                            DiscordInteractionResponseType.ChannelMessageWithSource,
-                            new DiscordInteractionResponseBuilder().WithContent(
-                                $"{cfgjson.Emoji.NoPermissions} Invalid permission level to use command **{e.Context.CommandName}**!\n" +
+                        await e.Context.RespondAsync(new DiscordInteractionResponseBuilder().WithContent(
+                                $"{cfgjson.Emoji.NoPermissions} Invalid permission level to use command **{e.Context.Command.Name}**!\n" +
                                 $"Required: `{att.TargetLvl}`\n" +
                                 $"You have: `{levelText}`")
                                 .AsEphemeral(true)
                             );
                     }
             }
-            e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Error during invocation of interaction command {command} by {user}", e.Context.CommandName, $"{DiscordHelpers.UniqueUsername(e.Context.User)}");
-        }
-
-        public static async Task ContextCommandErrorEvent(SlashCommandsExtension _, DSharpPlus.SlashCommands.EventArgs.ContextMenuErrorEventArgs e)
-        {
-            if (e.Exception is SlashExecutionChecksFailedException slex)
-            {
-                foreach (var check in slex.FailedChecks)
-                    if (check is SlashRequireHomeserverPermAttribute att && e.Context.CommandName != "edit")
-                    {
-                        var level = (await GetPermLevelAsync(e.Context.Member));
-                        var levelText = level.ToString();
-                        if (level == ServerPermLevel.Nothing && rand.Next(1, 100) == 69)
-                            levelText = $"naught but a thing, my dear human. Congratulations, you win {rand.Next(1, 10)} bonus points.";
-
-                        await e.Context.CreateResponseAsync(
-                            DiscordInteractionResponseType.ChannelMessageWithSource,
-                            new DiscordInteractionResponseBuilder().WithContent(
-                                $"{cfgjson.Emoji.NoPermissions} Invalid permission level to use command **{e.Context.CommandName}**!\n" +
-                                $"Required: `{att.TargetLvl}`\n" +
-                                $"You have: `{levelText}`")
-                                .AsEphemeral(true)
-                            );
-                    }
-            }
-            e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Error during invocation of context command {command} by {user}", e.Context.CommandName, $"{DiscordHelpers.UniqueUsername(e.Context.User)}");
+            e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Error during invocation of interaction command {command} by {user}", e.Context.Command.Name, $"{DiscordHelpers.UniqueUsername(e.Context.User)}");
         }
 
     }

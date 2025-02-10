@@ -209,7 +209,8 @@
   "feedbackHubForum": 1033193525975715911,
   "forumIntroPosts": [],
   "insiderAnnouncementChannel": 1043898319883219004,
-  "insiderCommandLockedToChannel": 187649467611086849,
+  "insiderInfoChannel": 1279201622651572317,
+  "insidersChannel": 187649467611086849,
   "dmAutoresponseTimeLimit": 6,
   "autoDeleteEmptyThreads": true,
   "insiderCanaryThread": 1082394217168523315,
@@ -218,6 +219,6 @@
   "autoWarnMsgAutoDeleteDays": 3,
   "logLevel": "Information",
   "lokiURL": "http://100.79.19.82:3100",
-  "lokiServiceName": "cliptok",
+  "lokiServiceName": "cirno",
   "voiceChannelPurge": false
 }

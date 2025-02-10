@@ -28,6 +28,9 @@
 
         [JsonProperty("type")]
         public WarningType Type { get; set; }
+
+        [JsonProperty("stub")]
+        public bool Stub { get; set; } = false;
     }
 
     public class MessageReference
@@ -262,12 +265,23 @@
 
         [JsonProperty("forumIntroPosts")]
         public List<ulong> ForumIntroPosts { get; private set; } = new();
+        
+        [JsonProperty("insiderInfoChannel")]
+        public ulong InsiderInfoChannel { get; private set; }
 
         [JsonProperty("insiderAnnouncementChannel")]
         public ulong InsiderAnnouncementChannel { get; private set; } = 0;
+        
+        private ulong insidersChannel;
+        [JsonProperty("insidersChannel")]
+        public ulong InsidersChannel
+        {
+            get => insidersChannel == 0 ? InsiderCommandLockedToChannel : insidersChannel;
+            private set => insidersChannel = value;
+        }
 
         [JsonProperty("insiderCommandLockedToChannel")]
-        public ulong InsiderCommandLockedToChannel { get; private set; } = 0;
+        private ulong InsiderCommandLockedToChannel { get; set; } = 0;
 
         [JsonProperty("dmAutoresponseTimeLimit")]
         public int DmAutoresponseTimeLimit { get; private set; } = 0;
@@ -286,6 +300,9 @@
 
         [JsonProperty("autoWarnMsgAutoDeleteDays")]
         public int AutoWarnMsgAutoDeleteDays { get; private set; }
+        
+        [JsonProperty("compromisedAccountBanMsgAutoDeleteDays")]
+        public int CompromisedAccountBanMsgAutoDeleteDays { get; private set; }
 
         [JsonProperty("logLevel")]
         public Level LogLevel { get; private set; } = Level.Information;
@@ -304,6 +321,12 @@
         
         [JsonProperty("rulesAllowedPublicChannels")]
         public List<ulong> RulesAllowedPublicChannels { get; private set; } = new();
+
+        [JsonProperty("mentionTrackExcludedChannels")]
+        public List<ulong> MentionTrackExcludedChannels { get; private set; } = new();
+
+        [JsonProperty("pingBotOwnersOnBadErrors")]
+        public bool PingBotOwnersOnBadErrors { get; private set; } = false;
     }
 
     public enum Level { Information, Warning, Error, Debug, Verbose }
@@ -483,6 +506,9 @@
 
         [JsonProperty("insider10RP")]
         public ulong Insider10RP { get; private set; }
+        
+        [JsonProperty("insiderChat")]
+        public ulong InsiderChat { get; private set; }
 
         [JsonProperty("patchTuesday")]
         public ulong PatchTuesday { get; private set; }
