@@ -242,7 +242,6 @@ namespace Cliptok.Commands
         [Description("Set a reminder for yourself. Example: !reminder 1h do the thing")]
         [TextAlias("remindme", "reminder", "rember", "wemember", "remember", "remind")]
         [AllowedProcessors(typeof(TextCommandProcessor))]
-        [RequireHomeserverPerm(ServerPermLevel.Tier4, WorkOutside = true)]
         public async Task RemindMe(
             TextCommandContext ctx,
             [Description("The amount of time to wait before reminding you. For example: 2s, 5m, 1h, 1d")] string timetoParse,
