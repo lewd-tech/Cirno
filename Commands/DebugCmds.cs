@@ -322,8 +322,34 @@ namespace Cliptok.Commands
                 }
                 await ctx.RespondAsync(await StringHelpers.CodeOrHasteBinAsync(JsonConvert.SerializeObject(WarningHelpers.mostRecentWarning, Formatting.Indented), "json"));
             }
+
+            [Command("bancache")]
+            [Description("Dump the most recent manual warning")]
+            public async Task BanCacheCmd(TextCommandContext ctx)
+            {
+                if (BanHelpers.MostRecentBan is null)
+                {
+                    await ctx.RespondAsync("No cached ban found.");
+                    return;
+                }
+                await ctx.RespondAsync(await StringHelpers.CodeOrHasteBinAsync(JsonConvert.SerializeObject(BanHelpers.MostRecentBan, Formatting.Indented), "json"));
+            }
+
+
+            [Command("mutecache")]
+            [Description("Dump the most recent manual warning")]
+            public async Task MuteCacheCmd(TextCommandContext ctx)
+            {
+                if (MuteHelpers.MostRecentMute is null)
+                {
+                    await ctx.RespondAsync("No cached mute found.");
+                    return;
+                }
+                await ctx.RespondAsync(await StringHelpers.CodeOrHasteBinAsync(JsonConvert.SerializeObject(MuteHelpers.MostRecentMute, Formatting.Indented), "json"));
+            }
+
         }
-        
+
         class OverridesCmd
         {
             // This is outside of the debug class/group to avoid issues caused by DSP.Commands that are out of our control
@@ -370,7 +396,7 @@ namespace Cliptok.Commands
                     {
                         var allowedPermissions = string.IsNullOrWhiteSpace(overwrite.Value.Allowed.ToString("name")) ? "none" : overwrite.Value.Allowed.ToString("name");
                         var deniedPermissions = string.IsNullOrWhiteSpace(overwrite.Value.Denied.ToString("name")) ? "none" : overwrite.Value.Denied.ToString("name");
-                        
+
                         response +=
                             $"<#{overwrite.Key}>:\n**Allowed**: {allowedPermissions}\n**Denied**: {deniedPermissions}\n\n";
                     }
@@ -441,11 +467,11 @@ namespace Cliptok.Commands
                     // Confirm permission overrides before we do anything.
                     var parsedAllowedPerms = new DiscordPermissions(allowedPermissions);
                     var parsedDeniedPerms = new DiscordPermissions(deniedPermissions);
-                    
+
                     var allowedPermsStr = parsedAllowedPerms.ToString("name");
                     if (string.IsNullOrWhiteSpace(allowedPermsStr))
                         allowedPermsStr = "None";
-                    
+
                     var deniedPermsStr = parsedDeniedPerms.ToString("name");
                     if (string.IsNullOrWhiteSpace(deniedPermsStr))
                         deniedPermsStr = "None";
@@ -566,7 +592,7 @@ namespace Cliptok.Commands
 
                     await msg.ModifyAsync(x => x.Content = $"{Program.cfgjson.Emoji.Success} Successfully applied {numAppliedOverrides}/{dictionary.Count} overrides for {user.Mention}!");
                 }
-                
+
                 [Command("dump")]
                 [Description("Dump all of a channel's overrides from Discord or the database.")]
                 [IsBotOwner]
@@ -589,7 +615,7 @@ namespace Cliptok.Commands
 
                         await ctx.RespondAsync($"Dump from Discord:\n{await StringHelpers.CodeOrHasteBinAsync(output, "json")}");
                     }
-                    
+
                     [Command("db")]
                     [TextAlias("database")]
                     [Description("Dump all of a channel's overrides as they are stored in the db.")]
@@ -600,7 +626,8 @@ namespace Cliptok.Commands
                         try
                         {
                             var allOverwrites = await Program.db.HashGetAllAsync("overrides");
-                            foreach (var overwrite in allOverwrites) {
+                            foreach (var overwrite in allOverwrites)
+                            {
                                 var overwriteDict = JsonConvert.DeserializeObject<Dictionary<ulong, DiscordOverwrite>>(overwrite.Value);
                                 if (overwriteDict is null) continue;
                                 if (overwriteDict.TryGetValue(channel.Id, out var value))
@@ -611,18 +638,18 @@ namespace Cliptok.Commands
                         {
                             await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Something went wrong while trying to fetch the overrides for {channel.Mention}!" +
                                                   " There are overrides in the database but I could not parse them. Check the database manually for details.");
-                            
+
                             Program.discord.Logger.LogError(ex, "Failed to read overrides from db for 'debug overrides dump'!");
-                            
+
                             return;
                         }
-                        
+
                         if (overwrites.Count == 0)
                         {
                             await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} No overrides found for {channel.Mention} in the database!");
                             return;
                         }
-                        
+
                         string output = "";
                         foreach (var overwrite in overwrites)
                         {
@@ -632,7 +659,7 @@ namespace Cliptok.Commands
                         await ctx.RespondAsync($"Dump from db:\n{await StringHelpers.CodeOrHasteBinAsync(output, "json")}");
                     }
                 }
-                
+
                 [Command("cleanup")]
                 [TextAlias("clean", "prune")]
                 [Description("Removes overrides from the db for channels that no longer exist.")]
@@ -642,7 +669,7 @@ namespace Cliptok.Commands
                     await ctx.RespondAsync($"{Program.cfgjson.Emoji.Loading} Working on it...");
                     var msg = await ctx.GetResponseAsync();
                     var removedOverridesCount = 0;
-                    
+
                     var dbOverwrites = await Program.db.HashGetAllAsync("overrides");
                     foreach (var userOverwrites in dbOverwrites)
                     {
@@ -658,7 +685,7 @@ namespace Cliptok.Commands
                                 removedOverridesCount++;
                             }
                         }
-                        
+
                         // Write back to db
                         // If the user now has no overrides, remove them from the db entirely
                         if (overwriteDict.Count == 0)
@@ -671,11 +698,11 @@ namespace Cliptok.Commands
                             await Program.db.HashSetAsync("overrides", userOverwrites.Name, JsonConvert.SerializeObject(overwriteDict));
                         }
                     }
-                    
+
                     await msg.ModifyAsync($"{Program.cfgjson.Emoji.Success} Done! Cleaned up {removedOverridesCount} overrides.");
                 }
             }
-            
+
             private static async Task<(bool success, ulong failedOverwrite)> ImportOverridesFromChannelAsync(DiscordChannel channel)
             {
                 // Imports overrides from the specified channel to the database. See 'debug overrides import' and 'debug overrides importall'

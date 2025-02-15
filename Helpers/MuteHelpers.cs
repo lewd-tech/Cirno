@@ -2,6 +2,8 @@
 {
     public class MuteHelpers
     {
+        public static MemberPunishment MostRecentMute;
+
         public static async Task<DiscordEmbed> MuteStatusEmbed(DiscordUser user, DiscordGuild guild)
         {
             DiscordMember member = default;
@@ -179,9 +181,9 @@
                     {
                         if (isTqsMute)
                         {
-                           dmContent = $"{Program.cfgjson.Emoji.Muted} You have been temporarily muted, in **tech support channels only**, in **{guild.Name}** for **{TimeHelpers.TimeToPrettyFormat(muteDuration, false)}** pending action from a Moderator." +
-                                $"\nReason: **{reason}**" +
-                                $"\nMute expires: <t:{TimeHelpers.ToUnixTimestamp(expireTime)}:R>";
+                            dmContent = $"{Program.cfgjson.Emoji.Muted} You have been temporarily muted, in **tech support channels only**, in **{guild.Name}** for **{TimeHelpers.TimeToPrettyFormat(muteDuration, false)}** pending action from a Moderator." +
+                                 $"\nReason: **{reason}**" +
+                                 $"\nMute expires: <t:{TimeHelpers.ToUnixTimestamp(expireTime)}:R>";
                         }
                         else
                         {
@@ -312,6 +314,7 @@
             }
 
             await Program.db.HashSetAsync("mutes", naughtyUser.Id, JsonConvert.SerializeObject(newMute));
+            MostRecentMute = newMute;
 
             return output;
         }
