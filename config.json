@@ -158,6 +158,11 @@
   },
   "feedbackHubChannelId": 865734819995582464,
   "everyoneFilter": false,
+  "githubWorkflowPrivate": {
+    "repo": "Microsoft-community/lists",
+    "ref": "main",
+    "workflowId": "append-lists-txt.yml"
+  },
   "logChannels": {
     "mod": {
       "channelId": 751545758292901898
