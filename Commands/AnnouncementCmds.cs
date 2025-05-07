@@ -2,6 +2,10 @@ namespace Cliptok.Commands
 {
     public class AnnouncementCmds
     {
+        // used to pass context to modal handling for /editannounce
+        // keyed by user ID
+        public static Dictionary<ulong, (ulong msgId, string role1, string role2)> EditAnnounceCache = new();
+        
         [Command("announcebuild")]
         [Description("Announce a Windows Insider build in the current channel.")]
         [AllowedProcessors(typeof(SlashCommandProcessor))]
@@ -21,8 +25,9 @@ namespace Cliptok.Commands
             [SlashChoiceProvider(typeof(WindowsInsiderChannelChoiceProvider))]
             [Parameter("insider_role2"), Description("The second insider role to ping.")] string insiderChannel2 = "",
 
-            [Parameter("canary_create_new_thread"), Description("Enable this option if you want to create a new Canary thread for some reason")] bool canaryCreateNewThread = false,
-            [Parameter("thread"), Description("The thread to mention in the announcement.")] DiscordChannel threadChannel = default,
+            [Parameter("create_new_thread"), Description("Enable this option if you want to create a new thread for some reason")] bool createNewThread = false,
+            [Parameter("thread1"), Description("The thread to mention in the announcement.")] DiscordChannel threadChannel = default,
+            [Parameter("thread2"), Description("The second thread to mention in the announcement.")] DiscordChannel threadChannel2 = default,
             [Parameter("flavour_text"), Description("Extra text appended on the end of the main line, replacing :WindowsInsider: or :Windows10:")] string flavourText = "",
             [Parameter("autothread_name"), Description("If no thread is given, create a thread with this name.")] string autothreadName = "Build {0} ({1})",
 
@@ -45,6 +50,18 @@ namespace Cliptok.Commands
                 await ctx.RespondAsync(text: $"{Program.cfgjson.Emoji.Error} Windows 10 only has a Release Preview Channel.", ephemeral: true);
                 return;
             }
+            
+            if (threadChannel != default && threadChannel == threadChannel2)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Both threads cannot be the same! Simply set one instead.", ephemeral: true);
+                return;
+            }
+            
+            if (threadChannel == default && threadChannel2 != default)
+            {
+                threadChannel = threadChannel2;
+                threadChannel2 = default;
+            }
 
             // Avoid duplicate announcements
             if (await Program.db.SetContainsAsync("announcedInsiderBuilds", buildNumber) && !forceReannounce)
@@ -52,6 +69,7 @@ namespace Cliptok.Commands
                 await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Build {buildNumber} has already been announced! If you are sure you want to announce it again, set `force_reannounce` to True.", ephemeral: true);
                 return;
             }
+
             await Program.db.SetAddAsync("announcedInsiderBuilds", buildNumber);
 
             if (flavourText == "" && windowsVersion == 10)
@@ -76,6 +94,9 @@ namespace Cliptok.Commands
             {
                 roleKey1 = insiderChannel1.ToLower();
             }
+
+            // defer since we're going to do lots of rest calls now
+            await ctx.DeferResponseAsync(ephemeral: false);
 
             DiscordRole insiderRole1 = await ctx.Guild.GetRoleAsync(Program.cfgjson.AnnouncementRoles[roleKey1]);
             DiscordRole insiderRole2 = default;
@@ -143,21 +164,54 @@ namespace Cliptok.Commands
                 if (threadChannel != default)
                 {
                     pingMsgString += $"\n\nDiscuss it here: {threadChannel.Mention}";
+                    if (threadChannel2 != default)
+                        pingMsgString += $" & {threadChannel2.Mention}";
                 }
-                else if (insiderChannel1 == "Canary" && insiderChannel2 == "" && Program.cfgjson.InsiderCanaryThread != 0 && autothreadName == "Build {0} ({1})" && !canaryCreateNewThread)
+                else if (!createNewThread)
                 {
-                    threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderCanaryThread);
+                    switch (insiderChannel1)
+                    {
+                        case "Canary":
+                            threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["canary"]);
+                            break;
+                        case "Dev":
+                            threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["dev"]);
+                            break;
+                        case "Beta":
+                            threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["beta"]);
+                            break;
+                        case "RP":
+                            if (windowsVersion == 10)
+                                threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp10"]);
+                            else
+                                threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp"]);
+                            break;
+                    }
+                    
+                    switch (insiderChannel2)
+                    {
+                        case "Canary":
+                            threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["canary"]);
+                            break;
+                        case "Dev":
+                            threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["dev"]);
+                            break;
+                        case "Beta":
+                            threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["beta"]);
+                            break;
+                        case "RP":
+                            if (windowsVersion == 10)
+                                threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp10"]);
+                            else
+                                threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp"]);
+                            break;
+                    }
+                        
                     pingMsgString += $"\n\nDiscuss it here: {threadChannel.Mention}";
+                    if (threadChannel2 != default)
+                        pingMsgString += $" & {threadChannel2.Mention}";
                     var msg = await threadChannel.SendMessageAsync(innerThreadMsgString);
-                    try
-                    {
-                        await msg.PinAsync();
-                    }
-                    catch
-                    {
-                        // most likely we hit max pins, we can handle this later
-                        // either way, lets ignore for now
-                    }
+                    await DiscordHelpers.UpdateInsiderThreadPinsAsync(threadChannel, msg);
                 }
                 else
                 {
@@ -180,22 +234,60 @@ namespace Cliptok.Commands
                 if (threadChannel != default)
                 {
                     noPingMsgString += $"\n\nDiscuss it here: {threadChannel.Mention}";
+                    if (threadChannel2 != default)
+                        noPingMsgString += $" & {threadChannel2.Mention}";
                 }
-                else if (insiderChannel1 == "Canary" && insiderChannel2 == "" && Program.cfgjson.InsiderCanaryThread != 0 && autothreadName == "Build {0} ({1})" && !canaryCreateNewThread)
+                else if (!createNewThread)
                 {
-                    threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderCanaryThread);
+                    switch (insiderChannel1)
+                    {
+                        case "Canary":
+                            threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["canary"]);
+                            break;
+                        case "Dev":
+                            threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["dev"]);
+                            break;
+                        case "Beta":
+                            threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["beta"]);
+                            break;
+                        case "RP":
+                            if (windowsVersion == 10)
+                                threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp10"]);
+                            else
+                                threadChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp"]);
+                            break;
+                    }
+                    
+                    switch (insiderChannel2)
+                    {
+                        case "Canary":
+                            threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["canary"]);
+                            break;
+                        case "Dev":
+                            threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["dev"]);
+                            break;
+                        case "Beta":
+                            threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["beta"]);
+                            break;
+                        case "RP":
+                            if (windowsVersion == 10)
+                                threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp10"]);
+                            else
+                                threadChannel2 = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderThreads["rp"]);
+                            break;
+                    }
+                        
                     noPingMsgString += $"\n\nDiscuss it here: {threadChannel.Mention}";
+                    if (threadChannel2 != default)
+                        noPingMsgString += $" & {threadChannel2.Mention}";
                     var msg = await threadChannel.SendMessageAsync(innerThreadMsgString);
-                    try
+                    await DiscordHelpers.UpdateInsiderThreadPinsAsync(threadChannel, msg);
+                    DiscordMessage msg2 = default;
+                    if (threadChannel2 != default)
                     {
-                        await msg.PinAsync();
+                        msg2 = await threadChannel2.SendMessageAsync(innerThreadMsgString);
+                        await DiscordHelpers.UpdateInsiderThreadPinsAsync(threadChannel2, msg2);
                     }
-                    catch
-                    {
-                        // most likely we hit max pins, we can handle this later
-                        // either way, lets ignore for now
-                    }
-
                 }
                 else
                 {
@@ -225,6 +317,8 @@ namespace Cliptok.Commands
             if (Program.cfgjson.InsiderAnnouncementChannel != 0)
             {
                 pingMsgString = pingMsgBareString + $"\n\nDiscuss it here: {threadChannel.Mention}";
+                if (threadChannel2 != default)
+                    pingMsgString += $" & {threadChannel2.Mention}";
 
                 var announcementChannel = await ctx.Client.GetChannelAsync(Program.cfgjson.InsiderAnnouncementChannel);
                 await insiderRole1.ModifyAsync(mentionable: true);
@@ -265,41 +359,52 @@ namespace Cliptok.Commands
             }
         }
 
-        [Command("editannouncetextcmd")]
-        [TextAlias("editannounce")]
+        [Command("editannounce")]
         [Description("Edit an announcement, preserving the ping highlight.")]
-        [AllowedProcessors(typeof(TextCommandProcessor))]
+        [AllowedProcessors(typeof(SlashCommandProcessor))]
         [RequireHomeserverPerm(ServerPermLevel.Moderator)]
         public async Task EditAnnounce(
-            TextCommandContext ctx,
-            [Description("The ID of the message to edit.")] ulong messageId,
-            [Description("The short name for the role to ping.")] string roleName,
-            [RemainingText, Description("The new message content, excluding the ping.")] string content
+            SlashCommandContext ctx,
+            [Parameter("message"), Description("The ID of the message to edit.")] string messageId,
+            [SlashChoiceProvider(typeof(AnnouncementRoleChoiceProvider))]
+            [Parameter("role1"), Description("The first role to ping.")] string role1Name,
+            [SlashChoiceProvider(typeof(AnnouncementRoleChoiceProvider))]
+            [Parameter("role2"), Description("The second role to ping. Optional.")] string role2Name = null
         )
         {
-            DiscordRole discordRole;
-
-            if (Program.cfgjson.AnnouncementRoles.ContainsKey(roleName))
+            // Validate msg ID
+            DiscordMessage msg;
+            try
             {
-                discordRole = await ctx.Guild.GetRoleAsync(Program.cfgjson.AnnouncementRoles[roleName]);
-                await discordRole.ModifyAsync(mentionable: true);
-                try
-                {
-                    await ctx.Message.DeleteAsync();
-                    var msg = await ctx.Channel.GetMessageAsync(messageId);
-                    await msg.ModifyAsync($"{discordRole.Mention} {content}");
-                }
-                catch
-                {
-                    // We still need to remember to make it unmentionable even if the msg fails.
-                }
-                await discordRole.ModifyAsync(mentionable: false);
+                msg = await ctx.Channel.GetMessageAsync(Convert.ToUInt64(messageId));
             }
-            else
+            catch
             {
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That role name isn't recognised!");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That message ID wasn't recognised!", ephemeral: true);
                 return;
             }
+            
+            if (msg.Author.Id != ctx.Client.CurrentUser.Id)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That message wasn't sent by me, so I can't edit it!", ephemeral: true);
+                return;
+            }
+            
+            // Validate roles
+            if (!Program.cfgjson.AnnouncementRoles.ContainsKey(role1Name) || (role2Name is not null && !Program.cfgjson.AnnouncementRoles.ContainsKey(role2Name)))
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} The role name(s) you entered aren't recognised!", ephemeral: true);
+                return;
+            }
+            if (role1Name == role2Name)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Warning} You provided the same role name twice! Did you mean to use two different roles?", ephemeral: true);
+                return;
+            }
+            
+            EditAnnounceCache[ctx.User.Id] = (Convert.ToUInt64(messageId), role1Name, role2Name);
+
+            await ctx.RespondWithModalAsync(new DiscordInteractionResponseBuilder().WithTitle("Edit Announcement").WithCustomId("editannounce-modal-callback").AddComponents(new DiscordTextInputComponent("New announcement text. Do not include roles!", "editannounce-modal-new-text", value: msg.Content, style: DiscordTextInputStyle.Paragraph)));
         }
 
         [Command("announcetextcmd")]
@@ -442,6 +547,22 @@ namespace Cliptok.Commands
                     new("Beta Channel", "Beta"),
                     new("Release Preview Channel", "RP")
                 };
+            }
+        }
+        
+        internal class AnnouncementRoleChoiceProvider : IChoiceProvider
+        {
+            public async ValueTask<IEnumerable<DiscordApplicationCommandOptionChoice>> ProvideAsync(CommandParameter _)
+            {
+                List<DiscordApplicationCommandOptionChoice> list = new();
+                foreach (var role in Program.cfgjson.AnnouncementRoles)
+                {
+                    if (Program.cfgjson.AnnouncementRolesFriendlyNames is not null && Program.cfgjson.AnnouncementRolesFriendlyNames.ContainsKey(role.Key))
+                        list.Add(new DiscordApplicationCommandOptionChoice(Program.cfgjson.AnnouncementRolesFriendlyNames[role.Key], role.Key));
+                    else
+                        list.Add(new DiscordApplicationCommandOptionChoice(role.Key, role.Key));
+                }
+                return list;
             }
         }
     }

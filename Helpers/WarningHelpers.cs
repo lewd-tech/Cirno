@@ -246,12 +246,26 @@
                 Program.db.HashSet("automaticWarnings", warningId, JsonConvert.SerializeObject(warning));
             }
 
-            LogChannelHelper.LogMessageAsync("mod",
+            var logMsg = await LogChannelHelper.LogMessageAsync("mod",
                 new DiscordMessageBuilder()
                     .WithContent($"{Program.cfgjson.Emoji.Warning} New warning for {targetUser.Mention}!")
                     .AddEmbed(await FancyWarnEmbedAsync(warning, true, 0xFEC13D, false, targetUser.Id))
                     .WithAllowedMentions(Mentions.None)
             );
+            try
+            {
+                var emoji = DiscordEmoji.FromName(Program.discord, ":CliptokRecycleBin:", true);
+                await logMsg.CreateReactionAsync(emoji);
+                Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(Program.cfgjson.WarningLogReactionTimeMinutes));
+                    await logMsg.DeleteOwnReactionAsync(emoji);
+                });
+            }
+            catch
+            {
+                // Don't really care if this fails
+            }
 
             // automute handling
             var warningsOutput = (await Program.db.HashGetAllAsync(targetUser.Id.ToString())).ToDictionary(
@@ -423,7 +437,11 @@
             if (!wasAutoModBlock)
                 wasThreadDeleted = await DiscordHelpers.ThreadChannelAwareDeleteMessageAsync(infringingMessage, minMessages);
 
-            DiscordChannel targetChannel = infringingMessage.Channel;
+            return await ThreadAwareSendPublicWarningMessage(warningMessageContent, wasThreadDeleted, infringingMessage.Channel);
+        }
+
+        public static async Task<DiscordMessage> ThreadAwareSendPublicWarningMessage(string warningMessageContent, bool wasThreadDeleted, DiscordChannel targetChannel)
+        {
             if (wasThreadDeleted || targetChannel.Id == Program.cfgjson.SupportForumId)
             {
                 if (Program.cfgjson.ForumChannelAutoWarnFallbackChannel == 0)

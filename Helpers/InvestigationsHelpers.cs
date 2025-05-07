@@ -13,7 +13,7 @@
             
             // If logging to #investigations and there is embed/forward data, leave it out & add a note to check #mod-logs instead
             if (logChannelKey == "investigations" && !string.IsNullOrEmpty(messageContentOverride) && messageContentOverride != infringingMessage.Content)
-                messageContentOverride = $"{infringingMessage.Content}\n-# [...embed content omitted, check <#{Program.cfgjson.LogChannels["mod"].ChannelId}>...]";
+                messageContentOverride = $"{infringingMessage.Content}\n-# [...full content omitted, check <#{LogChannelHelper.GetLogChannelId("mod")}>...]";
 
             var embed = new DiscordEmbedBuilder()
             .WithDescription(string.IsNullOrWhiteSpace(messageContentOverride) ? infringingMessage.Content : messageContentOverride)
@@ -44,10 +44,23 @@
                 else
                     content = $"{Program.cfgjson.Emoji.Denied} Deleted infringing message by {infringingMessage.Author.Mention} in {infringingMessage.Channel.Mention}:";
 
+            DiscordMessage logMsg;
             if (channelOverride == default)
-                await LogChannelHelper.LogMessageAsync(logChannelKey, content, embed);
+                logMsg = await LogChannelHelper.LogMessageAsync(logChannelKey, content, embed);
             else
-                await channelOverride.SendMessageAsync(new DiscordMessageBuilder().WithContent(content).AddEmbed(embed).WithAllowedMentions(Mentions.None));
+                logMsg = await channelOverride.SendMessageAsync(new DiscordMessageBuilder().WithContent(content).AddEmbed(embed).WithAllowedMentions(Mentions.None));
+            
+            // Add reaction to log message to be used to delete
+            if (logChannelKey == "investigations" && channelOverride == default)
+            {
+                var emoji = DiscordEmoji.FromName(Program.discord, ":CliptokRecycleBin:", true);
+                await logMsg.CreateReactionAsync(emoji);
+                Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(Program.cfgjson.WarningLogReactionTimeMinutes));
+                    await logMsg.DeleteOwnReactionAsync(emoji);
+                });
+            }
         }
 
     }

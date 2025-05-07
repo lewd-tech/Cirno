@@ -218,7 +218,6 @@
   "insidersChannel": 187649467611086849,
   "dmAutoresponseTimeLimit": 6,
   "autoDeleteEmptyThreads": true,
-  "insiderCanaryThread": 1082394217168523315,
   "tqsMutedRole": 752821045408563230,
   "tqsMuteDurationHours": 2,
   "autoWarnMsgAutoDeleteDays": 3,

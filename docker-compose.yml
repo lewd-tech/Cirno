@@ -29,7 +29,7 @@ services:
     # uncomment this for bespoke setups
     network_mode: service:tailscale
   redis:
-    image: 'redis:7.2-alpine'
+    image: 'mirror.gcr.io/redis:7.2-alpine'
     restart: always
     volumes:
       - type: bind

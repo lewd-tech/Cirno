@@ -24,12 +24,15 @@ namespace Cliptok
 
         public async Task ZombiedAsync(IGatewayClient client)
         {
-            Program.discord.Logger.LogWarning("Gateway entered zombied state. Attempted to reconnect.");
-            await client.ReconnectAsync();
+            Program.discord.Logger.LogCritical("The gateway connection has zombied, and the bot is being restarted to reconnect reliably.");
+            Environment.Exit(1);
         }
 
         public async Task ReconnectRequestedAsync(IGatewayClient _) { }
-        public async Task ReconnectFailedAsync(IGatewayClient _) { }
+        public async Task ReconnectFailedAsync(IGatewayClient _) {
+            Program.discord.Logger.LogCritical("The gateway connection has irrecoverably failed, and the bot is being restarted to reconnect reliably.");
+            Environment.Exit(1);
+        }
         public async Task SessionInvalidatedAsync(IGatewayClient _) { }
         public async Task ResumeAttemptedAsync(IGatewayClient _) { }
 
@@ -66,6 +69,13 @@ namespace Cliptok
             foreach (var list in cfgjson.WordListList)
             {
                 var listOutput = File.ReadAllLines($"Lists/{list.Name}");
+
+                // allow for multi-line scams with \n to separate lines
+                for (int i = 0; i < listOutput.Length; i++)
+                {
+                    listOutput[i] = listOutput[i].Replace("\\n", "\n").Replace("\\\n", "\\n");
+                }
+
                 cfgjson.WordListList[cfgjson.WordListList.FindIndex(a => a.Name == list.Name)].Words = listOutput;
             }
         }
@@ -211,6 +221,7 @@ namespace Cliptok
             discordBuilder.ConfigureEventHandlers
             (
                 builder => builder.HandleComponentInteractionCreated(InteractionEvents.ComponentInteractionCreateEvent)
+                                  .HandleModalSubmitted(InteractionEvents.ModalSubmitted)
                                   .HandleSessionCreated(ReadyEvent.OnReady)
                                   .HandleMessageCreated(MessageEvent.MessageCreated)
                                   .HandleMessageUpdated(MessageEvent.MessageUpdated)
@@ -231,6 +242,7 @@ namespace Cliptok
                                   .HandleChannelUpdated(ChannelEvents.ChannelUpdated)
                                   .HandleChannelDeleted(ChannelEvents.ChannelDeleted)
                                   .HandleAutoModerationRuleExecuted(AutoModEvents.AutoModerationRuleExecuted)
+                                  .HandleGuildAuditLogCreated(AuditLogEvents.GuildAuditLogCreated)
             );
 
             // TODO(erisa): At some point we might be forced to ConnectAsync() the builder directly

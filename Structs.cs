@@ -187,6 +187,9 @@
 
         [JsonProperty("announcementRoles")]
         public Dictionary<string, ulong> AnnouncementRoles { get; private set; }
+        
+        [JsonProperty("announcementRolesFriendlyNames")]
+        public Dictionary<string, string> AnnouncementRolesFriendlyNames { get; private set; }
 
         [JsonProperty("hastebinEndpoint")]
         public string HastebinEndpoint { get; private set; }
@@ -294,9 +297,9 @@
 
         [JsonProperty("autoDeleteEmptyThreads")]
         public bool AutoDeleteEmptyThreads { get; private set; } = false;
-
-        [JsonProperty("insiderCanaryThread")]
-        public ulong InsiderCanaryThread { get; set; } = 0;
+        
+        [JsonProperty("insiderThreads")]
+        public Dictionary<string, ulong> InsiderThreads { get; set; } = new();
 
         [JsonProperty("tqsMutedRole")]
         public ulong TqsMutedRole { get; private set; } = 0;
@@ -339,6 +342,18 @@
         
         [JsonProperty("botCommandsChannel")]
         public ulong BotCommandsChannel { get; private set; }
+
+        [JsonProperty("duplicateMessageThreshold")]
+        public int DuplicateMessageThreshold { get; private set; } = 0;
+
+        [JsonProperty("duplicateMessageSeconds")]
+        public int DuplicateMessageSeconds { get; private set; } = 0;
+
+        [JsonProperty("insiderThreadKeepLastPins")]
+        public int InsiderThreadKeepLastPins { get; private set; } = 50; // 50 is the pin limit, so it would be silly to allow infinite
+        
+        [JsonProperty("warningLogReactionTimeMinutes")]
+        public int WarningLogReactionTimeMinutes { get; private set; }
     }
 
     public enum Level { Information, Warning, Error, Debug, Verbose }
@@ -660,6 +675,13 @@
 
         [JsonProperty("id")]
         public ulong Id { get; set; }
+    }
+
+    public class RecentMessageInfo
+    {
+        public string Content { get; set; }
+        public List<MockDiscordMessage> Messages { get; set; }
+        public DateTime LastMessageTime { get; set; }
     }
 
 }
