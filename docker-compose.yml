@@ -1,6 +1,5 @@
 services:
   bot:
-    image: cirno
     build: .
     depends_on:
       - redis
@@ -27,7 +26,7 @@ services:
       #  I don't advise changing this unless you have a strange setup
       - REDIS_DOCKER_OVERRIDE=true
     # uncomment this for bespoke setups
-    network_mode: service:tailscale
+    # network_mode: service:tailscale
   redis:
     image: 'mirror.gcr.io/redis:7.2-alpine'
     restart: always
