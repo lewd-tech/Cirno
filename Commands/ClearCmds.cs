@@ -267,7 +267,7 @@
             if (messagesToClear.Count >= 50)
             {
                 DiscordButtonComponent confirmButton = new(DiscordButtonStyle.Danger, "clear-confirm-callback", "Delete Messages");
-                DiscordMessage confirmationMessage = await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Muted} You're about to delete {messagesToClear.Count} messages. Are you sure?").AddComponents(confirmButton).AsEphemeral(true));
+                DiscordMessage confirmationMessage = await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Muted} You're about to delete {messagesToClear.Count} messages. Are you sure?").AddActionRowComponent(confirmButton).AsEphemeral(true));
 
                 MessagesToClear.Add(confirmationMessage.Id, messagesToClear);
             }
@@ -296,13 +296,17 @@
                     await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} There were no messages that matched all of the arguments you provided! Nothing to do."));
                 }
 
-                await LogChannelHelper.LogDeletedMessagesAsync(
-                    "messages",
-                    $"{Program.cfgjson.Emoji.Deleted} **{messagesToClear.Count}** messages were cleared from {channel.Mention} by {ctx.User.Mention}.",
-                    messagesToClear,
-                    channel
-                );
+                // logging is now handled in the bulk delete event
 
+                if (!Program.cfgjson.EnablePersistentDb)
+                {
+                    await LogChannelHelper.LogDeletedMessagesAsync(
+                        "messages",
+                        $"{Program.cfgjson.Emoji.Deleted} **{messagesToClear.Count}** messages were cleared from {channel.Mention} by {ctx.User.Mention}.",
+                        messagesToClear,
+                        channel
+                    );
+                }
             }
         }
     }

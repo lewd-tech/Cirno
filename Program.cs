@@ -3,6 +3,8 @@ using DSharpPlus.Extensions;
 using DSharpPlus.Net.Gateway;
 using Serilog.Sinks.Grafana.Loki;
 using System.Reflection;
+using Microsoft.EntityFrameworkCore;
+using Serilog.Events;
 
 namespace Cliptok
 {
@@ -43,8 +45,8 @@ namespace Cliptok
         public static DiscordClient discord;
         public static Random rnd = new();
         public static ConfigJson cfgjson;
-        public static ConnectionMultiplexer redis;
-        public static IDatabase db;
+        public static ConnectionMultiplexer redisConnection;
+        public static IDatabase redis;
         internal static EventId CliptokEventID { get; } = new EventId(1000, "Cliptok");
         internal static EventId LogChannelErrorID { get; } = new EventId(1001, "LogChannelError");
 
@@ -63,6 +65,8 @@ namespace Cliptok
         public static List<ServerApiResponseJson> serverApiList = new();
 
         public static DiscordChannel ForumChannelAutoWarnFallbackChannel;
+
+        public static CliptokDbContext dbContext;
 
         public static void UpdateLists()
         {
@@ -92,7 +96,8 @@ namespace Cliptok
                     lc.Filter.ByExcluding("EventId.Id = 1001")
                 .WriteTo.DiscordSink(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information, outputTemplate: logFormat)
                 )
-                .WriteTo.Console(outputTemplate: logFormat, theme: AnsiConsoleTheme.Literate);
+                .WriteTo.Console(outputTemplate: logFormat, theme: AnsiConsoleTheme.Literate)
+                .MinimumLevel.Override("System.Net.Http", LogEventLevel.Error);
 
             string token;
             var json = "";
@@ -154,7 +159,7 @@ namespace Cliptok
                 token = cfgjson.Core.Token;
 
             if (Environment.GetEnvironmentVariable("REDIS_URL") is not null)
-                redis = ConnectionMultiplexer.Connect(Environment.GetEnvironmentVariable("REDIS_URL"));
+                redisConnection = ConnectionMultiplexer.Connect(Environment.GetEnvironmentVariable("REDIS_URL"));
             else
             {
                 string redisHost;
@@ -162,13 +167,20 @@ namespace Cliptok
                     redisHost = "redis";
                 else
                     redisHost = cfgjson.Redis.Host;
-                redis = ConnectionMultiplexer.Connect($"{redisHost}:{cfgjson.Redis.Port}");
+                redisConnection = ConnectionMultiplexer.Connect($"{redisHost}:{cfgjson.Redis.Port}");
             }
 
-            db = redis.GetDatabase();
+            redis = redisConnection.GetDatabase();
 
             // Migration away from a broken attempt at a key in the past.
-            db.KeyDelete("messages");
+            redis.KeyDelete("messages");
+
+            if (cfgjson.EnablePersistentDb)
+            {
+                // create db context that we can use
+                dbContext = new CliptokDbContext();
+                dbContext.Database.Migrate();
+            }
 
             DiscordClientBuilder discordBuilder = DiscordClientBuilder.CreateDefault(token, DiscordIntents.All);
 
@@ -226,6 +238,7 @@ namespace Cliptok
                                   .HandleMessageCreated(MessageEvent.MessageCreated)
                                   .HandleMessageUpdated(MessageEvent.MessageUpdated)
                                   .HandleMessageDeleted(MessageEvent.MessageDeleted)
+                                  .HandleMessagesBulkDeleted(MessageEvent.MessagesBulkDeleted)
                                   .HandleGuildMemberAdded(MemberEvents.GuildMemberAdded)
                                   .HandleGuildMemberRemoved(MemberEvents.GuildMemberRemoved)
                                   .HandleMessageReactionAdded(ReactionEvent.OnReaction)

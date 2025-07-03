@@ -13,7 +13,7 @@ namespace Cliptok.Events
             {
                 await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredChannelMessageWithSource, new DiscordInteractionResponseBuilder().AsEphemeral(true));
 
-                var text = await db.HashGetAsync("deletedMessageReferences", e.Message.Id);
+                var text = await redis.HashGetAsync("deletedMessageReferences", e.Message.Id);
                 if (text.IsNullOrEmpty)
                 {
                     discord.Logger.LogError("Failed to find deleted message content for {id}", e.Message.Id);
@@ -93,13 +93,13 @@ namespace Cliptok.Events
                 var newOverwrite = JsonConvert.DeserializeObject<DiscordOverwrite>(JsonConvert.SerializeObject(mockOverwrite));
 
                 // Get current overrides for user in db
-                var userOverwrites = await db.HashGetAsync("overrides", mockOverwrite.Id);
+                var userOverwrites = await redis.HashGetAsync("overrides", mockOverwrite.Id);
                 if (userOverwrites.IsNullOrEmpty)
                 {
                     // No overwrites for this user yet, create a list and add to it
 
                     var overwrites = new Dictionary<string, DiscordOverwrite> { { channelId.ToString(), newOverwrite } };
-                    await db.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
+                    await redis.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
                 }
                 else
                 {
@@ -119,7 +119,7 @@ namespace Cliptok.Events
 
                         var mergeConfirmResponse = new DiscordMessageBuilder()
                             .WithContent($"{cfgjson.Emoji.Warning} **Caution:** This user already has an override for <#{channelId}>! Do you want to merge the permissions? Here are their **current** permissions:\n**Allowed:** {currentAllowedPerms}\n**Denied:** {currentDeniedPerms}")
-                            .AddComponents(new DiscordButtonComponent(DiscordButtonStyle.Danger, "debug-overrides-add-merge-confirm-callback", "Merge"), new DiscordButtonComponent(DiscordButtonStyle.Primary, "debug-overrides-add-cancel-callback", "Cancel"));
+                            .AddActionRowComponent(new DiscordButtonComponent(DiscordButtonStyle.Danger, "debug-overrides-add-merge-confirm-callback", "Merge"), new DiscordButtonComponent(DiscordButtonStyle.Primary, "debug-overrides-add-cancel-callback", "Cancel"));
 
                         await e.Message.ModifyAsync(mergeConfirmResponse);
                         return;
@@ -129,7 +129,7 @@ namespace Cliptok.Events
                         overwrites.Add(channelId.ToString(), newOverwrite);
                     }
                     // Update db
-                    await db.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
+                    await redis.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
                 }
 
                 // Remove from db so the override is not added again
@@ -193,7 +193,7 @@ namespace Cliptok.Events
                 var newOverwrite = JsonConvert.DeserializeObject<DiscordOverwrite>(JsonConvert.SerializeObject(mockOverwrite));
 
                 // Existing override data
-                var userOverwrites = await db.HashGetAsync("overrides", mockOverwrite.Id);
+                var userOverwrites = await redis.HashGetAsync("overrides", mockOverwrite.Id);
                 var overwrites = JsonConvert.DeserializeObject<Dictionary<string, DiscordOverwrite>>(userOverwrites);
 
                 // Merge permissions
@@ -201,8 +201,8 @@ namespace Cliptok.Events
                 var newMockOverwrite = new MockUserOverwrite
                 {
                     Id = mockOverwrite.Id,
-                    Allowed = newOverwrite.Allowed.Add(existingOverwrite.Allowed.EnumeratePermissions().ToArray()),
-                    Denied = newOverwrite.Denied.Add(existingOverwrite.Denied.EnumeratePermissions().ToArray())
+                    Allowed = newOverwrite.Allowed + existingOverwrite.Allowed,
+                    Denied = newOverwrite.Denied + existingOverwrite.Denied
                 };
 
                 // Cursed conversion again
@@ -211,7 +211,7 @@ namespace Cliptok.Events
                 overwrites[channelId.ToString()] = newOverwrite;
 
                 // Update db
-                await db.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
+                await redis.HashSetAsync("overrides", mockOverwrite.Id, JsonConvert.SerializeObject(overwrites));
 
                 // Respond
                 var allowedPermsStr = newOverwrite.Allowed.ToString("name");
@@ -256,7 +256,7 @@ namespace Cliptok.Events
 
                 var builder = new DiscordFollowupMessageBuilder()
                     .WithContent($"{cfgjson.Emoji.Insider} Use the menu below to toggle your Insider roles!")
-                    .AddComponents(menu)
+                    .AddActionRowComponent(menu)
                     .AsEphemeral(true);
 
                 await e.Interaction.CreateFollowupMessageAsync(builder);
@@ -359,7 +359,7 @@ namespace Cliptok.Events
                     // Ask them if they'd like to remove it
                     var confirmResponse = new DiscordFollowupMessageBuilder()
                         .WithContent($"{cfgjson.Emoji.Warning} You already have the {insiderChatRole.Mention} role! Would you like to remove it?")
-                        .AddComponents(new DiscordButtonComponent(DiscordButtonStyle.Danger, "insiders-info-chat-btn-remove-confirm-callback", "Remove"));
+                        .AddActionRowComponent(new DiscordButtonComponent(DiscordButtonStyle.Danger, "insiders-info-chat-btn-remove-confirm-callback", "Remove"));
 
                     await e.Interaction.CreateFollowupMessageAsync(confirmResponse);
                 }
@@ -368,7 +368,7 @@ namespace Cliptok.Events
                     // Member does not have the role; show a confirmation message with a button that will give it to them
                     await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
                         .WithContent($"{cfgjson.Emoji.Warning} Please note that <#{cfgjson.InsidersChannel}> is **not for tech support**! If you need tech support, please ask in the appropriate channels instead. Press the button to acknowledge this and get the {insiderChatRole.Mention} role.")
-                        .AddComponents(new DiscordButtonComponent(DiscordButtonStyle.Secondary, "insiders-info-chat-btn-confirm-callback", "I understand")));
+                        .AddActionRowComponent(new DiscordButtonComponent(DiscordButtonStyle.Secondary, "insiders-info-chat-btn-confirm-callback", "I understand")));
                 }
             }
             else if (e.Id == "insiders-info-chat-btn-confirm-callback")

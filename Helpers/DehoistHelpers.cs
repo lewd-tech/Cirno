@@ -15,6 +15,8 @@
 
         public static async Task<bool> CheckAndDehoistMemberAsync(DiscordMember targetMember, DiscordUser responsibleMod = default, bool isMassDehoist = false, bool dryRun = false, string nickname = default)
         {
+            Program.discord.Logger.LogDebug("Attempting to dehoist member {member}...", targetMember.Id);
+            
             string displayName = nickname;
             if (nickname == default)
             {
@@ -23,7 +25,10 @@
             }
 
             if ((await GetPermLevelAsync(targetMember)) >= ServerPermLevel.TrialModerator || targetMember.MemberFlags.Value.HasFlag(DiscordMemberFlags.AutomodQuarantinedUsername))
+            {
+                Program.discord.Logger.LogDebug("Skipped dehoisting member {member}: member is moderator or is automod-quarantined", targetMember.Id);
                 return false;
+            }
 
             if (
                 !(
@@ -45,6 +50,7 @@
                             a.AuditLogReason = responsibleMod != default ? isMassDehoist ? $"[Mass dehoist by {DiscordHelpers.UniqueUsername(responsibleMod)}]" : $"[Dehoist by {DiscordHelpers.UniqueUsername(responsibleMod)}]" : "[Automatic dehoist]";
                         });
                     }
+                    Program.discord.Logger.LogDebug("Successfully dehoisted member {memberId}", targetMember.Id);
                     return true;
                 }
 
@@ -61,12 +67,18 @@
                         a.AuditLogReason = responsibleMod != default ? isMassDehoist ? $"[Mass dehoist by {DiscordHelpers.UniqueUsername(responsibleMod)}]" : $"[Dehoist by {DiscordHelpers.UniqueUsername(responsibleMod)}]" : "[Automatic dehoist]";
                     });
                 }
+                Program.discord.Logger.LogDebug("Successfully dehoisted member {memberId}", targetMember.Id);
                 return true;
             }
             catch (Exception ex)
             {
                 if (ex is DSharpPlus.Exceptions.BadRequestException)
-                    Program.discord.Logger.LogInformation(Program.CliptokEventID, "Failed to dehoist member {memberId}! Discord said Bad Request. If this member's nickname is in violation of AutoMod rules, this is expected!", targetMember.Id);
+                {
+                    Program.discord.Logger.LogInformation(Program.CliptokEventID, "Failed to dehoist member {memberId}! Discord said Bad Request. If this member's profile is in violation of AutoMod rules, this is expected!", targetMember.Id);
+                    Program.discord.Logger.LogDebug("Failed to dehoist {memberId} with error Bad Request! Member has quarantined flag: {isQuarantined}; all flags: {memberFlags}", targetMember.Id, targetMember.MemberFlags.Value.HasFlag(DiscordMemberFlags.AutomodQuarantinedUsername), targetMember.MemberFlags.Value);
+                }
+
+                Program.discord.Logger.LogDebug(ex, "Failed to dehoist {memberId} with unexpected error:", targetMember.Id);
                 return false;
             }
         }
@@ -74,7 +86,7 @@
         public static async Task<(bool success, bool isPermissionError)> PermadehoistMember(DiscordUser discordUser, DiscordUser responsibleMod, DiscordGuild guild)
         {
             // If member is already in permadehoist list, fail
-            if (await Program.db.SetContainsAsync("permadehoists", discordUser.Id))
+            if (await Program.redis.SetContainsAsync("permadehoists", discordUser.Id))
                 return (false, false);
 
             DiscordMember discordMember;
@@ -85,7 +97,7 @@
             catch
             {
                 // Add member ID to permadehoist list
-                await Program.db.SetAddAsync("permadehoists", discordUser.Id);
+                await Program.redis.SetAddAsync("permadehoists", discordUser.Id);
 
                 return (true, false);
             }
@@ -112,14 +124,14 @@
                 catch
                 {
                     // On failure, add member ID to permadehoist list anyway
-                    await Program.db.SetAddAsync("permadehoists", discordUser.Id);
+                    await Program.redis.SetAddAsync("permadehoists", discordUser.Id);
 
                     return (false, false);
                 }
             }
 
             // On success or if member is already dehoisted, just add member ID to permadehoist list
-            await Program.db.SetAddAsync("permadehoists", discordUser.Id);
+            await Program.redis.SetAddAsync("permadehoists", discordUser.Id);
 
             return (true, false);
         }
@@ -127,11 +139,11 @@
         public static async Task<(bool success, bool isPermissionError)> UnpermadehoistMember(DiscordUser discordUser, DiscordUser responsibleMod, DiscordGuild guild)
         {
             // If member is not dehoisted and is not in permadehoist list, fail
-            if (!await Program.db.SetContainsAsync("permadehoists", discordUser.Id))
+            if (!await Program.redis.SetContainsAsync("permadehoists", discordUser.Id))
                 return (false, false);
 
             // Remove member ID from permadehoist list
-            await Program.db.SetRemoveAsync("permadehoists", discordUser.Id);
+            await Program.redis.SetRemoveAsync("permadehoists", discordUser.Id);
 
             if (guild is not null)
             {
@@ -169,7 +181,7 @@
 
         public static async Task<(bool success, bool isPermissionError, bool isDehoist)> TogglePermadehoist(DiscordUser discordUser, DiscordUser responsibleMod, DiscordGuild guild)
         {
-            if (await Program.db.SetContainsAsync("permadehoists", discordUser.Id))
+            if (await Program.redis.SetContainsAsync("permadehoists", discordUser.Id))
             {
                 // Member is dehoisted; un-permadehoist
                 var (success, isPermissionError) = await UnpermadehoistMember(discordUser, responsibleMod, guild);
