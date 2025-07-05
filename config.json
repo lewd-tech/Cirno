@@ -138,8 +138,8 @@
   "heartosoftId": 413429915187281940,
   "autoDehoistCharacters": " !\"#$%&'()*+,-./:;<=>?@[\\]^_`'",
   "secondaryAutoDehoistCharacters": "0123456789",
-  "hastebinEndpoint": "https://haste.erisa.uk",
-  "hastebinType": "haste",
+  "hastebinEndpoint": "https://paste.erisa.ts.net",
+  "hastebinType": "tclip",
   "userRoles": {
   },
   "modmailCategory": 536572162450915340,
@@ -224,5 +224,6 @@
   "logLevel": "Information",
   "lokiURL": "http://100.79.19.82:3100",
   "lokiServiceName": "cirno",
-  "voiceChannelPurge": false
+  "voiceChannelPurge": false,
+  "disableMicrosoftCommands": true
 }
