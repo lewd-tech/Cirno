@@ -225,5 +225,6 @@
   "lokiURL": "http://100.79.19.82:3100",
   "lokiServiceName": "cirno",
   "voiceChannelPurge": false,
-  "disableMicrosoftCommands": true
+  "disableMicrosoftCommands": true,
+  "enablePersistentDb": true
 }
