@@ -67,6 +67,7 @@ namespace Cliptok
         public static DiscordChannel ForumChannelAutoWarnFallbackChannel;
 
         public static CliptokDbContext dbContext;
+        internal static readonly string[] microsoftCommandTypes = ["AnnouncementCmds", "TechSupportCmds", "RoleCmds"];
 
         public static void UpdateLists()
         {
@@ -142,7 +143,7 @@ namespace Cliptok
 
             Log.Logger = loggerConfig.CreateLogger();
 
-            hasteUploader = new HasteBinClient(cfgjson.HastebinEndpoint);
+            hasteUploader = new HasteBinClient(cfgjson.HastebinEndpoint, cfgjson.HastebinType);
 
             UpdateLists();
 
@@ -179,7 +180,11 @@ namespace Cliptok
             {
                 // create db context that we can use
                 dbContext = new CliptokDbContext();
-                dbContext.Database.Migrate();
+                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+                if (pendingMigrations.Any())
+                {
+                    await dbContext.Database.MigrateAsync();
+                }
             }
 
             DiscordClientBuilder discordBuilder = DiscordClientBuilder.CreateDefault(token, DiscordIntents.All);
@@ -201,10 +206,23 @@ namespace Cliptok
                 // Register commands
                 var commandClasses = Assembly.GetExecutingAssembly().GetTypes().Where(t => t.IsClass && t.Namespace == "Cliptok.Commands");
                 foreach (var type in commandClasses)
+                {
+                    // config-disabled commands
+                    if (
+                        (cfgjson.DisableMicrosoftCommands && microsoftCommandTypes.Contains(type.Name))
+                        || (cfgjson.GitHubWorkflow == default && type.Name == "ListCmds")
+                        || (cfgjson.NoFun && type.Name == "FunCmds")
+                    )
+                    {
+                        continue;
+                    }
+
                     if (type.Name == "GlobalCmds")
                         builder.AddCommands(type);
                     else
                         builder.AddCommands(type, cfgjson.ServerID);
+
+                }
 
                 // Register command checks
                 builder.AddCheck<HomeServerCheck>();

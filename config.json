@@ -139,6 +139,7 @@
   "autoDehoistCharacters": " !\"#$%&'()*+,-./:;<=>?@[\\]^_`'",
   "secondaryAutoDehoistCharacters": "0123456789",
   "hastebinEndpoint": "https://haste.erisa.uk",
+  "hastebinType": "haste",
   "userRoles": {
   },
   "modmailCategory": 536572162450915340,
