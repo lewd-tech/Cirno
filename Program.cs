@@ -179,11 +179,13 @@ namespace Cliptok
             if (cfgjson.EnablePersistentDb)
             {
                 // create db context that we can use
-                dbContext = new CliptokDbContext();
-                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-                if (pendingMigrations.Any())
+                using (dbContext = new CliptokDbContext())
                 {
-                    await dbContext.Database.MigrateAsync();
+                    var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+                    if (pendingMigrations.Any())
+                    {
+                        await dbContext.Database.MigrateAsync();
+                    }
                 }
             }
 
@@ -306,8 +308,9 @@ namespace Cliptok
                         Tasks.EventTasks.HandlePendingChannelDeleteEventsAsync(),
                     ];
 
-                    // This one has its own time management, run it asynchronously and throw caution to the wind.
+                    // These have their own time management, run them asynchronously and throw caution to the wind.
                     Tasks.MassDehoistTasks.CheckAndMassDehoistTask();
+                    Tasks.CacheCleanupTasks.CheckAndDeleteOldMessageCacheAsync();
 
                     // To prevent a future issue if checks take longer than 10 seconds,
                     // we only start the 10 second counter after all tasks have concluded.

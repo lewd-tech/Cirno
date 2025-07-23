@@ -51,6 +51,10 @@ namespace Cliptok.Events
             {
                 client.Logger.LogDebug("Got a message update event for {message} by {user}", DiscordHelpers.MessageLink(e.Message), e.Message.Author.Id);
             }
+
+            if (e.Message.Channel.GuildId != Program.cfgjson.ServerID)
+                return;
+
             await MessageHandlerAsync(client, e.Message, e.Channel, true);
         }
 
@@ -69,7 +73,10 @@ namespace Cliptok.Events
             {
                 client.Logger.LogDebug("Got a message delete event for {message} by {user}", DiscordHelpers.MessageLink(e.Message), e.Message.Author.Id);
             }
-            
+
+            if (e.Message.Channel.GuildId != Program.cfgjson.ServerID)
+                return;
+
             foreach (var warning in await Program.redis.HashGetAllAsync("automaticWarnings"))
             {
                 if (JsonConvert.DeserializeObject<UserWarning>(warning.Value).ContextMessageReference.MessageId == e.Message.Id)
@@ -84,16 +91,16 @@ namespace Cliptok.Events
 
             if (Program.cfgjson.EnablePersistentDb)
             {
-                var dbContext = new CliptokDbContext();
-                var cachedMessage = await dbContext.Messages.Include(m => m.User).FirstOrDefaultAsync(m => m.Id == e.Message.Id);
-
-                // we store bot messages but don't log them right now
-                if (cachedMessage is not null && !cachedMessage.User.IsBot)
+                using (var dbContext = new CliptokDbContext())
                 {
-                    await LogChannelHelper.LogMessageAsync("messages", await DiscordHelpers.GenerateMessageRelay(cachedMessage, "deleted", true, true));
-                }
+                    var cachedMessage = await dbContext.Messages.Include(m => m.User).Include(m => m.Sticker).FirstOrDefaultAsync(m => m.Id == e.Message.Id);
 
-                _ = dbContext.DisposeAsync();
+                    // we store bot messages but don't log them right now
+                    if (cachedMessage is not null && !cachedMessage.User.IsBot)
+                    {
+                        await LogChannelHelper.LogMessageAsync("messages", await DiscordHelpers.GenerateMessageRelay(cachedMessage, "deleted", true, true));
+                    }
+                }
 
                 await DiscordHelpers.DoEmptyThreadCleanupAsync(e.Channel, e.Message);
             }
@@ -116,6 +123,9 @@ namespace Cliptok.Events
                 }
             }
 
+            if (e.Messages[0].Channel.GuildId != Program.cfgjson.ServerID)
+                return;
+
             if (Program.cfgjson.EnablePersistentDb)
             {
                 // log the bulk deleted messages
@@ -123,10 +133,21 @@ namespace Cliptok.Events
 
                 var messageIds = e.Messages.Select(m => m.Id).ToList();
 
-                var dbContext = new CliptokDbContext();
-                var cachedMessages = dbContext.Messages.Include(m => m.User).Where(m => messageIds.Contains(m.Id));
-                await LogChannelHelper.LogMessageAsync("messages", await LogChannelHelper.CreateDumpMessageAsync($"{Program.cfgjson.Emoji.Deleted} {e.Messages.Count} messages were deleted from {e.Channel.Mention}, {cachedMessages.ToList().Count} were logged:", cachedMessages.ToList(), e.Channel));
-                _ = dbContext.DisposeAsync();
+                using (var dbContext = new CliptokDbContext())
+                {
+                    var cachedMessages = dbContext.Messages.Include(m => m.User).Include(m => m.Sticker).Where(m => messageIds.Contains(m.Id));
+                    var cachedUsers = dbContext.Users.Where(u => cachedMessages.Select(m => m.User.Id).Contains(u.Id)).ToList();
+                    var (dumpMessage, pasteUrl) = await LogChannelHelper.CreateDumpMessageAsync($"{Program.cfgjson.Emoji.Deleted} {e.Messages.Count} messages were deleted from {e.Channel.Mention}, {cachedMessages.ToList().Count} were logged:", cachedMessages.ToList(), e.Channel);
+                    var logMsg = await LogChannelHelper.LogMessageAsync("messages", dumpMessage);
+                    await dbContext.BulkMessageLogStore.AddAsync(new Models.BulkMessageLogStore
+                    {
+                        PasteUrl = pasteUrl,
+                        DiscordUrl = DiscordHelpers.MessageLink(logMsg),
+                        CreatedAt = DateTime.UtcNow,
+                        Users = cachedUsers,
+                    });
+                    await dbContext.SaveChangesAsync();
+                }
             }
         }
 
@@ -202,19 +223,41 @@ namespace Cliptok.Events
                     IsBot = message.Author.IsBot
                 };
                 await ctx.Users.AddAsync(cachedMessage.User);
-                await ctx.SaveChangesAsync();
             }
             else
             {
                 cachedMessage.User = existingUser;
             }
 
+            if (message.Stickers.Count != 0)
+            {
+                var existingSticker = await ctx.Stickers.FirstOrDefaultAsync(s => s.Id == message.Stickers[0].Id);
+
+                if (existingSticker is null)
+                {
+                    cachedMessage.Sticker = new Models.CachedDiscordSticker
+                    {
+                        Id = message.Stickers[0].Id,
+                        Url = message.Stickers[0].StickerUrl,
+                        Name = message.Stickers[0].Name
+                    };
+                    await ctx.Stickers.AddAsync(cachedMessage.Sticker);
+                }
+                else
+                {
+                    cachedMessage.Sticker = existingSticker;
+                }
+            }
+
+            await ctx.SaveChangesAsync();
             return cachedMessage;
         }
 
         public static async Task UpdateMessageAsync(Models.CachedDiscordMessage cachedMessage, CliptokDbContext ctx)
         {
             ctx.Users.Attach(cachedMessage.User);
+            if (cachedMessage.Sticker is not null)
+                ctx.Stickers.Attach(cachedMessage.Sticker);
             ctx.Messages.Update(cachedMessage);
             await ctx.SaveChangesAsync();
         }
@@ -222,6 +265,8 @@ namespace Cliptok.Events
         public static async Task AddMessageToCacheAsync(Models.CachedDiscordMessage cachedMessage, CliptokDbContext ctx)
         {
             ctx.Attach(cachedMessage.User);
+            if (cachedMessage.Sticker is not null)
+                ctx.Stickers.Attach(cachedMessage.Sticker);
             await ctx.AddAsync(cachedMessage);
             await ctx.SaveChangesAsync();
         }
@@ -233,27 +278,30 @@ namespace Cliptok.Events
         public static async Task MessageHandlerAsync(DiscordClient client, MockDiscordMessage message, DiscordChannel channel, bool isAnEdit = false, bool limitFilters = false, bool wasAutoModBlock = false)
         {
             #region message logging fill to db
-
-            if (Program.cfgjson.EnablePersistentDb)
+            // If db support is enabled, and this message is not in an excluded channel, cache it
+            if (message.Channel.GuildId == Program.cfgjson.ServerID
+                && Program.cfgjson.EnablePersistentDb
+                && !Program.cfgjson.MessageLogExcludedChannels.Contains(message.ChannelId)
+                && (message.Channel.ParentId is null || !Program.cfgjson.MessageLogExcludedChannels.Contains((ulong)message.Channel.ParentId)))
             {
                 if (isAnEdit)
                 {
-                    var dbContext = new CliptokDbContext();
-                    var cachedMessage = dbContext.Messages.Include(m => m.User).FirstOrDefault(m => m.Id == message.Id);
-                    if (cachedMessage is not null && cachedMessage.Content != message.Content)
+                    using (var dbContext = new CliptokDbContext())
                     {
-                        var newMessage = await CacheMessageAsync(message, dbContext);
-                        // we store bot messages but don't log them right now
-                        if (cachedMessage is not null && !cachedMessage.User.IsBot)
+                        var cachedMessage = dbContext.Messages.Include(m => m.User).Include(m => m.Sticker).FirstOrDefault(m => m.Id == message.Id);
+                        if (cachedMessage is not null && (cachedMessage.Content != message.Content || cachedMessage.AttachmentURLs.Count != message.Attachments.Count))
                         {
-                            await LogChannelHelper.LogMessageAsync("messages", await DiscordHelpers.GenerateMessageRelay(newMessage, "edited", true, true, cachedMessage));
+                            var newMessage = await CacheMessageAsync(message, dbContext);
+                            // we store bot messages but don't log them right now
+                            if (cachedMessage is not null && !cachedMessage.User.IsBot)
+                            {
+                                await LogChannelHelper.LogMessageAsync("messages", await DiscordHelpers.GenerateMessageRelay(newMessage, "edited", true, true, cachedMessage));
+                            }
+                            cachedMessage.Content = newMessage.Content;
+                            cachedMessage.AttachmentURLs = newMessage.AttachmentURLs;
+                            await UpdateMessageAsync(cachedMessage, dbContext);
                         }
-
-                        cachedMessage.Content = newMessage.Content;
-                        cachedMessage.AttachmentURLs = newMessage.AttachmentURLs;
-                        await UpdateMessageAsync(cachedMessage, dbContext);
                     }
-                    _ = dbContext.DisposeAsync();
                 }
                 else
                 {
@@ -528,22 +576,6 @@ namespace Cliptok.Events
                 #region content filters
                 if ((await GetPermLevelAsync(member)) < ServerPermLevel.TrialModerator)
                 {
-                    #region block messages in forum intro thread
-                    if (!limitFilters)
-                    {
-                        if ((channel.Id == Program.cfgjson.SupportForumIntroThreadId ||
-                             Program.cfgjson.ForumIntroPosts.Contains(channel.Id)) &&
-                            !member.Roles.Any(role => role.Id == Program.cfgjson.TqsRoleId))
-                        {
-                            await message.DeleteAsync();
-                            var msg = await channel.SendMessageAsync($"{Program.cfgjson.Emoji.Error} {message.Author.Mention}, you can't send messages in this thread!\nTry creating a post on {channel.Parent.Mention} instead.");
-                            await Task.Delay(5000);
-                            await msg.DeleteAsync();
-                            return;
-                        }
-                    }
-                    #endregion
-
                     #region mass mentions ban filter
                     if ((message.MentionedUsers is not null && message.MentionedUsers.Count > Program.cfgjson.MassMentionBanThreshold) || (message.MentionedUsersCount > Program.cfgjson.MassMentionBanThreshold))
                     {

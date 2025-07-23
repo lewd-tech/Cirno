@@ -135,6 +135,11 @@
                         output.AppendLine($"{attachment}");
                     }
                 }
+
+                if (message.Sticker is not null)
+                {
+                    output.AppendLine($"[Sticker: {message.Sticker.Name}] ({message.Sticker.Url})");
+                }
             }
 
             return output.ToString();
@@ -275,45 +280,86 @@
             return new DiscordMessageBuilder().AddEmbeds(embeds.AsEnumerable());
         }
 
-        public static async Task<DiscordMessageBuilder> GenerateMessageRelay(Models.CachedDiscordMessage message, string type, bool channelRef = true, bool showChannelId = true, Models.CachedDiscordMessage oldMessage = null)
+        public static async Task<DiscordMessageBuilder> GenerateMessageRelay(Models.CachedDiscordMessage message, string type, bool channelRef = true, bool showChannelId = true, Models.CachedDiscordMessage oldMessage = null, bool showMessageId = true)
         {
             var channel = await Program.homeGuild.GetChannelAsync(message.ChannelId);
             DiscordEmbedBuilder embed = new DiscordEmbedBuilder()
                 .WithAuthor($"Message by {message.User.DisplayName}{(channelRef ? $" was {type} in #{channel.Name}" : "")}", null, message.User.AvatarUrl)
-                .WithFooter($"{(showChannelId ? $"Channel ID: {message.ChannelId} | " : "")}User ID: {message.User.Id}");
-
-            if (message.AttachmentURLs.Count > 0)
-                embed.WithImageUrl(message.AttachmentURLs[0])
-                    .AddField($"Attachment", message.AttachmentURLs[0]);
+                .WithFooter($"{(showChannelId ? $"Channel ID: {message.ChannelId} | " : "")}User ID: {message.User.Id} {(showMessageId ? $" | Message ID: {message.Id}" : "")}");
 
             if (type == "edited")
             {
                 embed.AddField("Message Link", $"{MessageLink(message)}");
                 if (oldMessage is not null)
                 {
-                    embed.AddField("Old content", await StringHelpers.CodeOrHasteBinAsync(oldMessage.Content, plain: true, noCode: true));
-                }
-                embed.AddField("New content", await StringHelpers.CodeOrHasteBinAsync(message.Content, plain: true, noCode: true));
-                embed.Color = DiscordColor.Yellow;
+                    if (oldMessage.Content is null || oldMessage.Content == "")
+                        embed.AddField("Old content", "`[ No content ]`");
+                    else
+                    {
+                        var oldContent = oldMessage.Content;
+                        if (oldMessage.AttachmentURLs.Count != 0)
+                        {
+                            if (oldContent != "")
+                                oldContent += "\n";
 
+                            oldContent += String.Join("\n", oldMessage.AttachmentURLs.ToArray());
+                        }
+
+                        if (oldMessage.Sticker is not null)
+                            oldContent += $"\n[{oldMessage.Sticker.Name}]({oldMessage.Sticker.Url})";
+                        embed.AddField("Old content", await StringHelpers.CodeOrHasteBinAsync(oldContent, noCode: true, messageWrapper: true, charLimit: 1024));
+                    }
+                }
+                if (message.Content is null || message.Content == "")
+                    embed.AddField("New content", "`[ No content ]`");
+                else
+                {
+                    var content = message.Content;
+                    if (message.AttachmentURLs.Count != 0)
+                    {
+                        if (content != "")
+                            content += "\n";
+
+                        content += String.Join("\n", message.AttachmentURLs.ToArray());
+                    }
+
+                    if (oldMessage.Sticker is not null)
+                        content += $"\n[{message.Sticker.Name}]({message.Sticker.Url})";
+
+                    embed.AddField("New content", await StringHelpers.CodeOrHasteBinAsync(content, noCode: true, messageWrapper: true, charLimit: 1024));
+                }
+                embed.Color = DiscordColor.Yellow;
             }
             else if (type == "deleted")
             {
                 embed.Color = DiscordColor.Red;
-                embed.WithDescription(message.Content);
+                if (message.Content is null || message.Content == "")
+                    embed.WithDescription("`[ No content ]`");
+                else
+                    embed.WithDescription(message.Content);
+
+                if (message.Sticker is not null)
+                {
+                    string fieldValue = $"[{message.Sticker.Name}]({message.Sticker.Url})";
+                    embed.AddField($"Sticker", fieldValue);
+                    embed.WithImageUrl(message.Sticker.Url.Replace("cdn.discordapp.com", "media.discordapp.net") + "?size=160");
+                }
             }
             else
             {
                 embed.WithDescription(message.Content);
             }
 
+            if (message.AttachmentURLs.Count > 0 && type != "edited")
+                embed.WithImageUrl(message.AttachmentURLs[0])
+                    .AddField($"Attachment", message.AttachmentURLs[0]);
 
             List<DiscordEmbed> embeds = new()
             {
                 embed
             };
 
-            if (message.AttachmentURLs.Count > 1)
+            if (message.AttachmentURLs.Count > 1 && type != "edited")
             {
                 foreach (var attachment in message.AttachmentURLs.Skip(1))
                 {

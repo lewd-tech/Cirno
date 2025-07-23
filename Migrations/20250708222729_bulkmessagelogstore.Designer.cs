@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Cliptok;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Cliptok.Migrations
 {
     [DbContext(typeof(CliptokDbContext))]
-    partial class CliptokDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250708222729_bulkmessagelogstore")]
+    partial class bulkmessagelogstore
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -75,9 +78,6 @@ namespace Cliptok.Migrations
                     b.Property<string>("Content")
                         .HasColumnType("text");
 
-                    b.Property<decimal?>("StickerId")
-                        .HasColumnType("numeric(20,0)");
-
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
@@ -86,28 +86,9 @@ namespace Cliptok.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StickerId");
-
                     b.HasIndex("UserId");
 
                     b.ToTable("Messages");
-                });
-
-            modelBuilder.Entity("Cliptok.Types.Models+CachedDiscordSticker", b =>
-                {
-                    b.Property<decimal>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(20,0)");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Url")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Stickers");
                 });
 
             modelBuilder.Entity("Cliptok.Types.Models+CachedDiscordUser", b =>
@@ -150,15 +131,9 @@ namespace Cliptok.Migrations
 
             modelBuilder.Entity("Cliptok.Types.Models+CachedDiscordMessage", b =>
                 {
-                    b.HasOne("Cliptok.Types.Models+CachedDiscordSticker", "Sticker")
-                        .WithMany()
-                        .HasForeignKey("StickerId");
-
                     b.HasOne("Cliptok.Types.Models+CachedDiscordUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId");
-
-                    b.Navigation("Sticker");
 
                     b.Navigation("User");
                 });

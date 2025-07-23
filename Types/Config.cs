@@ -111,7 +111,7 @@
         public string SecondaryAutoDehoistCharacters { get; private set; }
 
         [JsonProperty("modmailUserId")]
-        public ulong ModmailUserId { get; private set; }
+        public ulong ModmailUserId { get; private set; } = 0;
 
         [JsonProperty("announcementRoles")]
         public Dictionary<string, ulong> AnnouncementRoles { get; private set; }
@@ -170,9 +170,6 @@
         [JsonProperty("everyoneFilter")]
         public bool EveryoneFilter { get; private set; } = false;
 
-        [JsonProperty("usernameAPILogChannel")]
-        public ulong UsernameAPILogChannel { get; private set; } = 0;
-
         [JsonProperty("logChannels")]
         public Dictionary<string, LogChannelConfig> LogChannels { get; private set; }
 
@@ -188,9 +185,6 @@
         [JsonProperty("tqsRoleId")]
         public ulong TqsRoleId { get; private set; } = 0;
 
-        [JsonProperty("supportForumIntroThreadId")]
-        public ulong SupportForumIntroThreadId { get; private set; } = 0;
-
         [JsonProperty("supportForumId")]
         public ulong SupportForumId { get; private set; } = 0;
 
@@ -199,9 +193,6 @@
 
         [JsonProperty("feedbackHubForum")]
         public ulong FeedbackHubForum { get; private set; } = 0;
-
-        [JsonProperty("forumIntroPosts")]
-        public List<ulong> ForumIntroPosts { get; private set; } = new();
 
         [JsonProperty("insiderInfoChannel")]
         public ulong InsiderInfoChannel { get; private set; }
@@ -294,6 +285,12 @@
 
         [JsonProperty("hastebinType")]
         public string HastebinType { get; set; } = "haste";
+
+        [JsonProperty("messageCachePruneDays")]
+        public int MessageCachePruneDays { get; set; } = 30;
+
+        [JsonProperty("messageLogExcludedChannels")]
+        public List<ulong> MessageLogExcludedChannels { get; set; } = new();
 
     }
 
