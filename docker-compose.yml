@@ -30,6 +30,10 @@ services:
       - TZ=Etc/UTC
     # uncomment this for bespoke setups
     network_mode: service:tailscale
+    deploy:
+      resources:
+        limits:
+          memory: 512M
   redis:
     image: mirror.gcr.io/redis:7.2-alpine
     restart: always
