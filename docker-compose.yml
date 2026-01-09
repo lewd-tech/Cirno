@@ -29,7 +29,7 @@ services:
       - REDIS_DOCKER_OVERRIDE=true
       - TZ=Etc/UTC
     # uncomment this for bespoke setups
-    network_mode: service:tailscale
+    # network_mode: service:tailscale
     deploy:
       resources:
         limits:
