@@ -120,7 +120,7 @@
         public Dictionary<string, string> AnnouncementRolesFriendlyNames { get; private set; }
 
         [JsonProperty("hastebinEndpoint")]
-        public string HastebinEndpoint { get; private set; }
+        public string HastebinEndpoint { get; private set; } = "";
 
         [JsonProperty("modmailCategory")]
         public ulong ModmailCategory { get; private set; }
@@ -276,6 +276,9 @@
 
         [JsonProperty("enablePersistentDb")]
         public bool EnablePersistentDb { get; set; } = false;
+        
+        [JsonProperty("compromisedAccountBanAutoPardonHours")]
+        public int CompromisedAccountBanAutoPardonHours { get; private set; } = 0;
 
         [JsonProperty("disableMicrosoftCommands")]
         public bool DisableMicrosoftCommands { get; set; } = false;
@@ -292,6 +295,23 @@
         [JsonProperty("messageLogExcludedChannels")]
         public List<ulong> MessageLogExcludedChannels { get; set; } = new();
 
+        [JsonProperty("reactionEmoji")]
+        public ReactionEmojiConfig ReactionEmoji { get; set; }
+
+        [JsonProperty("autoModRules")]
+        public List<AutoModRuleConfig> AutoModRules { get; set; } = new();
+    }
+
+    public class AutoModRuleConfig
+    {
+        [JsonProperty("ruleId")]
+        public ulong RuleId { get; private set; }
+
+        [JsonProperty("action")]
+        public string Action { get; private set; }
+
+        [JsonProperty("reason")]
+        public string Reason { get; private set; } = "Automod rule violation";
     }
 
     public class WorkflowConfig
@@ -416,10 +436,6 @@
 
         [JsonProperty("insider")]
         public string Insider { get; set; }
-
-        [JsonProperty("windows10")]
-        public string Windows10 { get; set; }
-
     }
 
     public class CoreConfig
@@ -455,9 +471,6 @@
         [JsonProperty("insiderRP")]
         public ulong InsiderRP { get; private set; }
 
-        [JsonProperty("insider10RP")]
-        public ulong Insider10RP { get; private set; }
-
         [JsonProperty("insiderChat")]
         public ulong InsiderChat { get; private set; }
 
@@ -478,6 +491,18 @@
 
         [JsonProperty("webhookEnvVar")]
         public string WebhookEnvVar { get; private set; } = "";
+    }
+
+    public class ReactionEmojiConfig
+    {
+        [JsonProperty("delete")]
+        public ulong Delete { get; private set; } = 0;
+
+        [JsonProperty("success")]
+        public ulong Success { get; private set; } = 0;
+
+        [JsonProperty("error")]
+        public ulong Error { get; private set; } = 0;
     }
 
 }

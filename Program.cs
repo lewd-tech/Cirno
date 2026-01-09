@@ -1,10 +1,10 @@
 using DSharpPlus.Commands.Processors.TextCommands.Parsing;
 using DSharpPlus.Extensions;
 using DSharpPlus.Net.Gateway;
-using Serilog.Sinks.Grafana.Loki;
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Serilog.Events;
+using Serilog.Sinks.Grafana.Loki;
+using System.Reflection;
 
 namespace Cliptok
 {
@@ -31,7 +31,8 @@ namespace Cliptok
         }
 
         public async Task ReconnectRequestedAsync(IGatewayClient _) { }
-        public async Task ReconnectFailedAsync(IGatewayClient _) {
+        public async Task ReconnectFailedAsync(IGatewayClient _)
+        {
             Program.discord.Logger.LogCritical("The gateway connection has irrecoverably failed, and the bot is being restarted to reconnect reliably.");
             Environment.Exit(1);
         }
@@ -54,6 +55,9 @@ namespace Cliptok
         public static string[] avatars;
 
         public static string[] badUsernames;
+        public static string[] badNicknames;
+        public static string[] badNicknameAdverbs;
+        
         public static List<ulong> autoBannedUsersCache = new();
         public static DiscordGuild homeGuild;
 
@@ -67,7 +71,7 @@ namespace Cliptok
         public static DiscordChannel ForumChannelAutoWarnFallbackChannel;
 
         public static CliptokDbContext dbContext;
-        internal static readonly string[] microsoftCommandTypes = ["AnnouncementCmds", "TechSupportCmds", "RoleCmds"];
+        internal static readonly string[] microsoftCommandTypes = ["AnnouncementCmds", "TechSupportCmds", "RoleCmds", "RoleSlashCommands", "InsidersInteractions"];
 
         public static void UpdateLists()
         {
@@ -151,6 +155,16 @@ namespace Cliptok
                 badUsernames = File.ReadAllLines("Lists/usernames.txt");
             else
                 badUsernames = Array.Empty<string>();
+            
+            if (File.Exists("Lists/nicknames.txt"))
+                badNicknames = File.ReadAllLines("Lists/nicknames.txt");
+            else
+                badNicknames = Array.Empty<string>();
+            
+            if (File.Exists("Lists/adverbs.txt"))
+                badNicknameAdverbs = File.ReadAllLines("Lists/adverbs.txt");
+            else
+                badNicknameAdverbs = Array.Empty<string>();
 
             avatars = File.ReadAllLines("Lists/avatars.txt");
 
@@ -306,11 +320,11 @@ namespace Cliptok
                         Tasks.EventTasks.HandlePendingChannelCreateEventsAsync(),
                         Tasks.EventTasks.HandlePendingChannelUpdateEventsAsync(),
                         Tasks.EventTasks.HandlePendingChannelDeleteEventsAsync(),
-                    ];
 
-                    // These have their own time management, run them asynchronously and throw caution to the wind.
-                    Tasks.MassDehoistTasks.CheckAndMassDehoistTask();
-                    Tasks.CacheCleanupTasks.CheckAndDeleteOldMessageCacheAsync();
+                        // These have their own time checks
+                        Tasks.MassDehoistTasks.CheckAndMassDehoistTask(),
+                        Tasks.CacheCleanupTasks.CheckAndDeleteOldMessageCacheAsync()
+                    ];
 
                     // To prevent a future issue if checks take longer than 10 seconds,
                     // we only start the 10 second counter after all tasks have concluded.

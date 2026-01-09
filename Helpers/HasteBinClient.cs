@@ -21,7 +21,10 @@ namespace Cliptok.Helpers
 
         public async Task<HasteBinResult> PostAsync(string content, string language = default)
         {
-            switch (_hasteType) 
+            if (_baseUrl is null || _baseUrl == "")
+                return new HasteBinResult { IsSuccess = false, StatusCode = 0 };
+
+            switch (_hasteType)
             {
                 case "haste":
                     return await PostHastebinAsync(content, language);

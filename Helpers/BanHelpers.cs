@@ -2,12 +2,12 @@
 {
     public class BanHelpers
     {
-        public static MemberPunishment MostRecentBan; 
+        public static MemberPunishment MostRecentBan;
 
         public static async Task<bool> BanFromServerAsync(ulong targetUserId, string reason, ulong moderatorId, DiscordGuild guild, int deleteDays = 7, DiscordChannel channel = null, TimeSpan banDuration = default, bool appealable = false, bool compromisedAccount = false)
         {
             bool permaBan = false;
-            DateTime? actionTime = DateTime.Now;
+            DateTime? actionTime = DateTime.UtcNow;
             DateTime? expireTime = actionTime + banDuration;
             DiscordMember moderator = await guild.GetMemberAsync(moderatorId);
 
@@ -30,10 +30,10 @@
                     chatMessage = $"{Program.cfgjson.Emoji.Banned} <@{targetUserId}> has been banned: **{reason}**";
                 else
                     chatMessage = $"{Program.cfgjson.Emoji.Banned} <@{targetUserId}> has been banned for **{TimeHelpers.TimeToPrettyFormat(banDuration, false)}**: **{reason}**";
-                
+
                 if (deleteDays == 0)
                     chatMessage += "\n-# This user's messages have been kept.";
-                
+
                 output.chatMessage = await channel.SendMessageAsync(chatMessage);
             }
 
@@ -94,8 +94,24 @@
             MostRecentBan = newBan;
 
             // If ban is for a compromised account, add to list so the context message can be more-easily deleted later
+            // and pardon any automatic warnings issued within the last 12 hours
             if (compromisedAccount)
+            {
                 Program.redis.HashSet("compromisedAccountBans", targetUserId, JsonConvert.SerializeObject(newBan));
+                
+                var warnings = (await Program.redis.HashGetAllAsync(targetUserId.ToString())).Select(x => JsonConvert.DeserializeObject<UserWarning>(x.Value)).ToList();
+                foreach (var warning in warnings)
+                {
+                    if (warning.Type == WarningType.Warning
+                        && (warning.ModUserId == Program.discord.CurrentUser.Id || (await Program.discord.GetUserAsync(warning.ModUserId)).IsBot)
+                        && (DateTime.Now - warning.WarnTimestamp).TotalHours < Program.cfgjson.CompromisedAccountBanAutoPardonHours
+                        && !warning.IsPardoned)
+                    {
+                        warning.IsPardoned = true;
+                        await Program.redis.HashSetAsync(warning.TargetUserId.ToString(), warning.WarningId, JsonConvert.SerializeObject(warning));
+                    }
+                }
+            }
 
             try
             {
@@ -228,7 +244,6 @@
 
         public static async Task<DiscordEmbed> BanStatusEmbed(DiscordUser user, DiscordGuild guild)
         {
-            DiscordMember member = default;
             DiscordEmbedBuilder embedBuilder = new();
             var guildBans = await guild.GetBansAsync();
             var userBan = guildBans.FirstOrDefault(x => x.User.Id == user.Id);

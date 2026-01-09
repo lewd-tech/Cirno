@@ -46,7 +46,7 @@ namespace Cliptok.Commands
             {
                 TargetUserId = user.Id,
                 ModUserId = ctx.User.Id,
-                WarnTimestamp = DateTime.Now,
+                WarnTimestamp = DateTime.UtcNow,
                 Stub = true // make it clear this isn't a real warning
             };
 
@@ -111,108 +111,74 @@ namespace Cliptok.Commands
             await ctx.RespondAsync(eout);
         }
 
-        [Command("transfer_warnings")]
-        [Description("Transfer warnings from one user to another.")]
-        [AllowedProcessors(typeof(SlashCommandProcessor))]
-        [RequireHomeserverPerm(ServerPermLevel.Moderator)]
-        [RequirePermissions(DiscordPermission.ModerateMembers)]
-        public async Task TransferWarningsSlashCommand(SlashCommandContext ctx,
-            [Parameter("source_user"), Description("The user currently holding the warnings.")] DiscordUser sourceUser,
-            [Parameter("target_user"), Description("The user receiving the warnings.")] DiscordUser targetUser,
-            [Parameter("merge"), Description("Whether to merge the source user's warnings and the target user's warnings.")] bool merge = false,
-            [Parameter("force_override"), Description("DESTRUCTIVE OPERATION: Whether to OVERRIDE and DELETE the target users existing warnings.")] bool forceOverride = false
-        )
-        {
-            await ctx.DeferResponseAsync(false);
-
-            if (sourceUser == targetUser)
-            {
-                await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} The source and target users cannot be the same!"));
-                return;
-            }
-
-            var sourceWarnings = await Program.redis.HashGetAllAsync(sourceUser.Id.ToString());
-            var targetWarnings = await Program.redis.HashGetAllAsync(targetUser.Id.ToString());
-
-            if (sourceWarnings.Length == 0)
-            {
-                await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} The source user has no warnings to transfer.").AddEmbed(await GenerateWarningsEmbedAsync(sourceUser)));
-                return;
-            }
-            else if (merge)
-            {
-                foreach (var warning in sourceWarnings)
-                {
-                    await Program.redis.HashSetAsync(targetUser.Id.ToString(), warning.Name, warning.Value);
-                }
-                await Program.redis.KeyDeleteAsync(sourceUser.Id.ToString());
-            }
-            else if (targetWarnings.Length > 0 && !forceOverride)
-            {
-                await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Warning} **CAUTION**: The target user has warnings.\n\n" +
-                    $"If you are sure you want to **OVERRIDE** and **DELETE** these warnings, please consider the consequences before adding `force_override: True` to the command.\nIf you wish to **NOT** override the target's warnings, please use `merge: True` instead.")
-                    .AddEmbed(await GenerateWarningsEmbedAsync(targetUser)));
-                return;
-            }
-            else if (targetWarnings.Length > 0 && forceOverride)
-            {
-                await Program.redis.KeyDeleteAsync(targetUser.Id.ToString());
-                await Program.redis.KeyRenameAsync(sourceUser.Id.ToString(), targetUser.Id.ToString());
-            }
-            else
-            {
-                await Program.redis.KeyRenameAsync(sourceUser.Id.ToString(), targetUser.Id.ToString());
-            }
-
-            string operationText = "";
-            if (merge)
-                operationText = "merge ";
-            else if (forceOverride)
-                operationText = "force ";
-            await LogChannelHelper.LogMessageAsync("mod",
-                new DiscordMessageBuilder()
-                    .WithContent($"{Program.cfgjson.Emoji.Information} Warnings from {sourceUser.Mention} were {operationText}transferred to {targetUser.Mention} by `{DiscordHelpers.UniqueUsername(ctx.User)}`")
-                    .AddEmbed(await GenerateWarningsEmbedAsync(targetUser))
-            );
-            await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Success} Successfully {operationText}transferred warnings from {sourceUser.Mention} to {targetUser.Mention}!"));
-        }
-
         internal partial class WarningsAutocompleteProvider : IAutoCompleteProvider
         {
             public async ValueTask<IEnumerable<DiscordAutoCompleteChoice>> AutoCompleteAsync(AutoCompleteContext ctx)
             {
-                var list = new List<DiscordAutoCompleteChoice>();
-
-                var useroption = ctx.Options.FirstOrDefault(x => x.Name == "user");
-                if (useroption == default)
-                {
-                    return list;
-                }
-
-                var user = await ctx.Client.GetUserAsync((ulong)useroption.Value);
-
-                var warnings = (await Program.redis.HashGetAllAsync(user.Id.ToString()))
-                    .Where(x => JsonConvert.DeserializeObject<UserWarning>(x.Value).Type == WarningType.Warning).ToDictionary(
-                   x => x.Name.ToString(),
-                  x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
-                 ).OrderByDescending(x => x.Value.WarningId);
-
-                foreach (var warning in warnings)
-                {
-                    if (list.Count >= 25)
-                        break;
-
-                    string warningString = $"{StringHelpers.Pad(warning.Value.WarningId)} - {StringHelpers.Truncate(warning.Value.WarnReason, 29, true)} - {TimeHelpers.TimeToPrettyFormat(DateTime.Now - warning.Value.WarnTimestamp, true)}";
-
-                    var focusedOption = ctx.Options.FirstOrDefault(option => option.Focused);
-                    if (focusedOption is not null)
-                        if (warning.Value.WarnReason.Contains((string)focusedOption.Value) || warningString.ToLower().Contains(focusedOption.Value.ToString().ToLower()))
-                            list.Add(new DiscordAutoCompleteChoice(warningString, StringHelpers.Pad(warning.Value.WarningId)));
-                }
-
-                return list;
-                //return Task.FromResult((IEnumerable<DiscordAutoCompleteChoice>)list);
+                return await GetWarningsForAutocompleteAsync(ctx);
             }
+        }
+        
+        internal partial class PardonedWarningsAutocompleteProvider : IAutoCompleteProvider
+        {
+            public async ValueTask<IEnumerable<DiscordAutoCompleteChoice>> AutoCompleteAsync(AutoCompleteContext ctx)
+            {
+                return await GetWarningsForAutocompleteAsync(ctx, pardonedOnly: true);
+            }
+        }
+        
+        internal partial class UnpardonedWarningsAutocompleteProvider : IAutoCompleteProvider
+        {
+            public async ValueTask<IEnumerable<DiscordAutoCompleteChoice>> AutoCompleteAsync(AutoCompleteContext ctx)
+            {
+                return await GetWarningsForAutocompleteAsync(ctx, excludePardoned: true);
+            }
+        }
+        
+        private static async Task<List<DiscordAutoCompleteChoice>> GetWarningsForAutocompleteAsync(AutoCompleteContext ctx, bool excludePardoned = false, bool pardonedOnly = false)
+        {
+            if (excludePardoned && pardonedOnly)
+                throw new ArgumentException("Cannot simultaneously exclude pardoned warnings from autocomplete suggestions and only show pardoned warnings.");
+            
+            var list = new List<DiscordAutoCompleteChoice>();
+
+            var useroption = ctx.Options.FirstOrDefault(x => x.Name == "user");
+            if (useroption == default)
+            {
+                return list;
+            }
+
+            var user = await ctx.Client.GetUserAsync((ulong)useroption.Value);
+
+            var warnings = (await Program.redis.HashGetAllAsync(user.Id.ToString()))
+                .Where(x => JsonConvert.DeserializeObject<UserWarning>(x.Value).Type == WarningType.Warning).ToDictionary(
+                    x => x.Name.ToString(),
+                    x => JsonConvert.DeserializeObject<UserWarning>(x.Value)
+                ).OrderByDescending(x => x.Value.WarningId);
+
+            foreach (var warning in warnings)
+            {
+                if (list.Count >= 25)
+                    break;
+
+                string warningString = $"{StringHelpers.Pad(warning.Value.WarningId)} - {StringHelpers.Truncate(warning.Value.WarnReason, 29, true)} - {TimeHelpers.TimeToPrettyFormat(DateTime.UtcNow - warning.Value.WarnTimestamp, true)}";
+                if (warning.Value.IsPardoned)
+                {
+                    if (excludePardoned)
+                        continue;
+                    
+                    warningString += " (pardoned)";
+                }
+                else if (pardonedOnly)
+                    continue;
+
+                var focusedOption = ctx.Options.FirstOrDefault(option => option.Focused);
+                if (focusedOption is not null)
+                    if (warning.Value.WarnReason.Contains((string)focusedOption.Value) || warningString.ToLower().Contains(focusedOption.Value.ToString().ToLower()))
+                        list.Add(new DiscordAutoCompleteChoice(warningString, StringHelpers.Pad(warning.Value.WarningId)));
+            }
+
+            return list;
         }
 
         [Command("warndetails")]
@@ -379,6 +345,130 @@ namespace Cliptok.Commands
                     .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), userID: user.Id)));
             }
         }
+        
+        [Command("pardon")]
+        [Description("Pardon a warning.")]
+        [AllowedProcessors(typeof(SlashCommandProcessor))]
+        [RequireHomeserverPerm(ServerPermLevel.TrialModerator), RequirePermissions(DiscordPermission.ModerateMembers)]
+        public async Task PardonSlashCommand(SlashCommandContext ctx,
+            [Parameter("user"), Description("The user to pardon a warning for.")] DiscordUser user,
+            [SlashAutoCompleteProvider(typeof(UnpardonedWarningsAutocompleteProvider))][Parameter("warning"), Description("Type to search! Find the warning you want to pardon.")] string warning,
+            [Parameter("public"), Description("Whether to show the output publicly. Default: false")] bool showPublic = false)
+        {
+            if (warning.Contains(' '))
+            {
+                warning = warning.Split(' ')[0];
+            }
+
+            long warnId;
+            try
+            {
+                warnId = Convert.ToInt64(warning);
+            }
+            catch
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Looks like your warning option was invalid! Give it another go?", ephemeral: true);
+                return;
+            }
+
+            var warningObject = GetWarning(user.Id, warnId);
+
+            if (warningObject is null)
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.", ephemeral: true);
+            else if (warningObject.Type == WarningType.Note)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That's a note, not a warning! Make sure you've got the right warning ID.", ephemeral: true);
+            }
+            else if ((await GetPermLevelAsync(ctx.Member)) == ServerPermLevel.TrialModerator && warningObject.ModUserId != ctx.User.Id && warningObject.ModUserId != ctx.Client.CurrentUser.Id)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {ctx.User.Mention}, as a Trial Moderator you cannot edit or delete warnings that aren't issued by you or the bot!", ephemeral: true);
+            }
+            else
+            {
+                await ctx.DeferResponseAsync(ephemeral: !showPublic);
+                
+                if (warningObject.IsPardoned)
+                {
+                    await ctx.FollowupAsync($"{Program.cfgjson.Emoji.Error} That warning has already been pardoned!");
+                    return;
+                }
+
+                warningObject.IsPardoned = true;
+                await Program.redis.HashSetAsync(warningObject.TargetUserId.ToString(), warningObject.WarningId.ToString(), JsonConvert.SerializeObject(warningObject));
+
+                await LogChannelHelper.LogMessageAsync("mod",
+                    new DiscordMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Information} Warning pardoned:" +
+                        $"`{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})")
+                        .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), true, userID: user.Id))
+                );
+
+                await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Information} Successfully pardoned warning `{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})")
+                    .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), userID: user.Id, showPardonedInline: true)));
+            }
+        }
+        
+        [Command("unpardon")]
+        [Description("Unpardon a warning.")]
+        [AllowedProcessors(typeof(SlashCommandProcessor))]
+        [RequireHomeserverPerm(ServerPermLevel.TrialModerator), RequirePermissions(DiscordPermission.ModerateMembers)]
+        public async Task UnpardonSlashCommand(SlashCommandContext ctx,
+            [Parameter("user"), Description("The user to unpardon a warning for.")] DiscordUser user,
+            [SlashAutoCompleteProvider(typeof(PardonedWarningsAutocompleteProvider))][Parameter("warning"), Description("Type to search! Find the warning you want to unpardon.")] string warning,
+            [Parameter("public"), Description("Whether to show the output publicly. Default: false")] bool showPublic = false)
+        {
+            if (warning.Contains(' '))
+            {
+                warning = warning.Split(' ')[0];
+            }
+
+            long warnId;
+            try
+            {
+                warnId = Convert.ToInt64(warning);
+            }
+            catch
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} Looks like your warning option was invalid! Give it another go?", ephemeral: true);
+                return;
+            }
+
+            var warningObject = GetWarning(user.Id, warnId);
+
+            if (warningObject is null)
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I couldn't find a warning for that user with that ID! Please check again.", ephemeral: true);
+            else if (warningObject.Type == WarningType.Note)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That's a note, not a warning! Make sure you've got the right warning ID.", ephemeral: true);
+            }
+            else if ((await GetPermLevelAsync(ctx.Member)) == ServerPermLevel.TrialModerator && warningObject.ModUserId != ctx.User.Id && warningObject.ModUserId != ctx.Client.CurrentUser.Id)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {ctx.User.Mention}, as a Trial Moderator you cannot edit or delete warnings that aren't issued by you or the bot!", ephemeral: true);
+            }
+            else
+            {
+                await ctx.DeferResponseAsync(ephemeral: !showPublic);
+                
+                if (!warningObject.IsPardoned)
+                {
+                    await ctx.FollowupAsync($"{Program.cfgjson.Emoji.Error} That warning isn't pardoned!");
+                    return;
+                }
+
+                warningObject.IsPardoned = false;
+                await Program.redis.HashSetAsync(warningObject.TargetUserId.ToString(), warningObject.WarningId.ToString(), JsonConvert.SerializeObject(warningObject));
+
+                await LogChannelHelper.LogMessageAsync("mod",
+                    new DiscordMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Information} Warning unpardoned:" +
+                        $"`{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})")
+                        .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), true, userID: user.Id))
+                );
+
+                await ctx.FollowupAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Information} Successfully unpardoned warning `{StringHelpers.Pad(warnId)}` (belonging to {user.Mention})")
+                    .AddEmbed(await FancyWarnEmbedAsync(GetWarning(user.Id, warnId), userID: user.Id, showPardonedInline: true)));
+            }
+        }
 
         [
             Command("warntextcmd"),
@@ -412,7 +502,7 @@ namespace Cliptok.Commands
             {
                 TargetUserId = targetUser.Id,
                 ModUserId = ctx.User.Id,
-                WarnTimestamp = DateTime.Now,
+                WarnTimestamp = DateTime.UtcNow,
                 Stub = true // make it clear this isn't a real warning
             };
 
@@ -486,7 +576,7 @@ namespace Cliptok.Commands
             {
                 TargetUserId = targetUser.Id,
                 ModUserId = ctx.User.Id,
-                WarnTimestamp = DateTime.Now,
+                WarnTimestamp = DateTime.UtcNow,
                 Stub = true // make it clear this isn't a real warning
             };
 
@@ -783,7 +873,7 @@ namespace Cliptok.Commands
             await ctx.RespondAsync($":thinking: As far as I can tell, the day with the most warnings issued was **{countList.Last().Key}** with a total of **{countList.Last().Value} warnings!**" +
                 $"\nExcluding automatic warnings, the most was on **{noAutoCountList.Last().Key}** with a total of **{noAutoCountList.Last().Value}** warnings!");
         }
-        
+
         [Command("revoke"), Description("Revoke a warning. Reply to the chat message for the warning to revoke when using this!")]
         [TextAlias("undo")]
         [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator)]
@@ -791,41 +881,41 @@ namespace Cliptok.Commands
         {
             await ctx.RespondAsync($"{Program.cfgjson.Emoji.Loading} Working on it...");
             var msg = await ctx.GetResponseAsync();
-            
+
             var reply = ctx.Message.ReferencedMessage;
-            
+
             if (reply is null)
             {
                 await msg.ModifyAsync($"{Program.cfgjson.Emoji.Error} Please reply to the warning message to delete!");
                 return;
             }
-            
+
             if (reply.Author.Id != Program.discord.CurrentUser.Id || (!Constants.RegexConstants.warn_msg_rx.IsMatch(reply.Content) && (!Constants.RegexConstants.auto_warn_msg_rx.IsMatch(reply.Content))))
             {
                 // this isnt a warning message
                 await msg.ModifyAsync($"{Program.cfgjson.Emoji.Error} That reply doesn't look like a warning message! Please reply to the warning message to delete.");
                 return;
             }
-            
+
             // Collect data from message
             var userId = Constants.RegexConstants.user_rx.Match(reply.Content).Groups[1].ToString();
             var reason = Constants.RegexConstants.warn_msg_rx.Match(reply.Content).Groups[1].Value;
             if (string.IsNullOrEmpty(reason))
                 reason = Constants.RegexConstants.auto_warn_msg_rx.Match(reply.Content).Groups[1].Value;
             var userWarnings = (await Program.redis.HashGetAllAsync(userId));
-            
+
             // Try to match against user warnings;
             // match warnings that have a reason that exactly matches the reason in the msg being replied to,
             // and that are explicitly warnings (WarningType.Warning), not notes
-            
+
             UserWarning warning = null;
-            
+
             var matchingWarnings = userWarnings.Where(x =>
             {
                 var warn = JsonConvert.DeserializeObject<UserWarning>(x.Value);
                 return warn.WarnReason == reason && warn.Type == WarningType.Warning;
             }).Select(x => JsonConvert.DeserializeObject<UserWarning>(x.Value)).ToList();
-            
+
             if (matchingWarnings.Count > 1)
             {
                 bool foundMatch = false;
@@ -836,7 +926,7 @@ namespace Cliptok.Commands
                     {
                         warning = match;
                         foundMatch = true;
-                        break;   
+                        break;
                     }
                 }
                 if (!foundMatch)
@@ -854,7 +944,7 @@ namespace Cliptok.Commands
             {
                 warning = matchingWarnings.First();
             }
-            
+
             if ((await GetPermLevelAsync(ctx.Member)) == ServerPermLevel.TrialModerator && warning.ModUserId != ctx.User.Id && warning.ModUserId != ctx.Client.CurrentUser.Id)
             {
                 await msg.ModifyAsync($"{Program.cfgjson.Emoji.Error} {ctx.User.Mention}, as a Trial Moderator you cannot edit or delete warnings that aren't issued by you or the bot!");

@@ -11,7 +11,7 @@ namespace Cliptok.Commands
         public async Task DumpMessage(MessageCommandContext ctx, DiscordMessage targetMessage)
         {
             var rawMsgData = JsonConvert.SerializeObject(targetMessage, Formatting.Indented);
-            await ctx.RespondAsync(await StringHelpers.CodeOrHasteBinAsync(rawMsgData, "json"), ephemeral: true);
+            await ctx.RespondAsync((await StringHelpers.CodeOrHasteBinAsync(rawMsgData, "json")).Text, ephemeral: true);
         }
 
         [Command("Show Avatar")]
@@ -209,7 +209,8 @@ namespace Cliptok.Commands
                 if (bulkLogs.Count == 0)
                 {
                     await ctx.RespondAsync(new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} There are no bulk message logs for {user.Mention}!").WithAllowedMentions(Mentions.None));
-                } else
+                }
+                else
                 {
                     var stringRespBuilder = new StringBuilder();
 
@@ -218,7 +219,7 @@ namespace Cliptok.Commands
                         stringRespBuilder.Append($"- [{TimeHelpers.TimeToPrettyFormat(DateTime.UtcNow - log.CreatedAt)}]({log.PasteUrl}) ({log.DiscordUrl})\n");
                     }
 
-                    await ctx.RespondAsync(new DiscordEmbedBuilder().WithAuthor($"Bulk logs containing {user.GlobalName ?? user.Username}", null, user.AvatarUrl).WithDescription(await StringHelpers.CodeOrHasteBinAsync(stringRespBuilder.ToString(), "md", 4000, false, true, false, $"## Bulk logs containing {user.GlobalName ?? user.Username}\n\n")).WithFooter($"User ID: {user.Id}"));
+                    await ctx.RespondAsync(new DiscordEmbedBuilder().WithAuthor($"Bulk logs containing {user.GlobalName ?? user.Username}", null, user.AvatarUrl).WithDescription((await StringHelpers.CodeOrHasteBinAsync(stringRespBuilder.ToString(), "md", 4000, false, true, false, $"## Bulk logs containing {user.GlobalName ?? user.Username}\n\n")).Text).WithFooter($"User ID: {user.Id}"));
                 }
             }
         }
