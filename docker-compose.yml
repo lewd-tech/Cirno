@@ -36,6 +36,8 @@ services:
           memory: 512M
   redis:
     image: mirror.gcr.io/redis:7.2-alpine
+    ports:
+      - 127.0.0.1:6379:6379
     restart: always
     volumes:
       - type: bind
@@ -45,6 +47,8 @@ services:
 # Use only if enablePersistentDb is enabled in config.json
   postgres:
     image: postgres:17-alpine
+    ports:
+      - 127.0.0.1:5432:5432
     restart: always
     environment:
       POSTGRES_USER: cliptok

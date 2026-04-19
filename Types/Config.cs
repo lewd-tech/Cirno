@@ -80,6 +80,9 @@
         [JsonProperty("lockdownEnabledChannels")]
         public List<ulong> LockdownEnabledChannels { get; private set; }
 
+        [JsonProperty("publicFacingChannels")]
+        public List<ulong> PublicFacingChannels { get; private set; }
+
         [JsonProperty("heartosoftId")]
         public ulong HeartosoftId { get; private set; }
 
@@ -229,6 +232,9 @@
         [JsonProperty("autoWarnMsgAutoDeleteDays")]
         public int AutoWarnMsgAutoDeleteDays { get; private set; }
 
+        [JsonProperty("autoWarnMsgAutoDeleteHours")]
+        public int AutoWarnMsgAutoDeleteHours { get; private set; }
+
         [JsonProperty("compromisedAccountBanMsgAutoDeleteDays")]
         public int CompromisedAccountBanMsgAutoDeleteDays { get; private set; }
 
@@ -300,6 +306,12 @@
 
         [JsonProperty("autoModRules")]
         public List<AutoModRuleConfig> AutoModRules { get; set; } = new();
+
+        [JsonProperty("enableModActionReplyAutoWarn")]
+        public bool EnableModActionReplyAutoWarn { get; set; } = false;
+
+        [JsonProperty("modActionReplyAutoWarnReason")]
+        public string ModActionReplyAutoWarnReason { get; set; } = "";
     }
 
     public class AutoModRuleConfig

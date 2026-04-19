@@ -1,4 +1,5 @@
-﻿global using Cliptok.CommandChecks;
+﻿global using Cliptok.Attributes;
+global using Cliptok.CommandChecks;
 global using Cliptok.Enums;
 global using Cliptok.Events;
 global using Cliptok.Helpers;
@@ -18,6 +19,7 @@ global using DSharpPlus.Commands.Trees;
 global using DSharpPlus.Commands.Trees.Metadata;
 global using DSharpPlus.Entities;
 global using DSharpPlus.EventArgs;
+global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.Logging;
 global using Newtonsoft.Json;
 global using Newtonsoft.Json.Linq;
