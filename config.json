@@ -140,7 +140,7 @@
   "heartosoftId": 413429915187281940,
   "autoDehoistCharacters": " !\"#$%&'()*+,-./:;<=>?@[\\]^_`'",
   "secondaryAutoDehoistCharacters": "0123456789",
-  "hastebinEndpoint": "https://paste.erisa.ts.net",
+  "hastebinEndpoint": "https://paste.msftcomm.ts.net",
   "hastebinType": "tclip",
   "userRoles": {
   },

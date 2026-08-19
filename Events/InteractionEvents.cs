@@ -4,6 +4,10 @@ namespace Cliptok.Events
 {
     public class InteractionEvents
     {
+        // Used to pass context between reminder modify interactions
+        // <user ID, reminder>
+        public static Dictionary<ulong, Reminder> ReminderModifyCache = new();
+
         public static async Task ComponentInteractionCreateEvent(DiscordClient _, ComponentInteractionCreatedEventArgs e)
         {
             // Edits need a webhook rather than interaction..?
@@ -240,25 +244,18 @@ namespace Cliptok.Events
                 await e.Interaction.DeferAsync(ephemeral: true);
 
                 // Fetch member
-                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                var member = await e.Guild.CheckAndGetMemberAsync(e.User.Id);
 
-                // Fetch Insider roles to check whether member already has them
-                var insiderCanaryRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderCanary);
-                var insiderDevRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderDev);
-                var insiderBetaRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderBeta);
-                var insiderRPRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderRP);
-                var patchTuesdayRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.PatchTuesday);
+                List<DiscordSelectComponentOption> menuOptions = [];
+                foreach (var roleId in Program.cfgjson.InsiderRoles)
+                {
+                    var role = await e.Guild.GetRoleAsync(roleId);
+                    menuOptions.Add(new(role.Name, role.Id.ToString(), isDefault: member.Roles.Any(r => r.Id == roleId)));
+                }
 
                 // Show menu with current Insider roles, apply new roles based on user selection
                 var menu = new DiscordSelectComponent("insiders-info-roles-menu-response-callback", "Choose your Insider roles",
-                    new List<DiscordSelectComponentOption>()
-                    {
-                        new("Windows 11 Canary channel", "insiders-info-w11-canary", isDefault: member.Roles.Contains(insiderCanaryRole)),
-                        new("Windows 11 Dev channel", "insiders-info-w11-dev", isDefault: member.Roles.Contains(insiderDevRole)),
-                        new("Windows 11 Beta channel", "insiders-info-w11-beta", isDefault: member.Roles.Contains(insiderBetaRole)),
-                        new("Windows 11 Release Preview channel", "insiders-info-w11-rp", isDefault: member.Roles.Contains(insiderRPRole)),
-                        new("Patch Tuesday", "insiders-info-pt", isDefault: member.Roles.Contains(patchTuesdayRole)),
-                    }, minOptions: 0, maxOptions: 5);
+                    menuOptions, minOptions: 0, maxOptions: menuOptions.Count);
 
                 var builder = new DiscordFollowupMessageBuilder()
                     .WithContent($"{cfgjson.Emoji.Insider} Use the menu below to toggle your Insider roles!")
@@ -276,29 +273,24 @@ namespace Cliptok.Events
                 await e.Interaction.DeferAsync(ephemeral: true);
 
                 // Get member
-                var member = await e.Guild.GetMemberAsync(e.User.Id);
-
-                // Map role select options to role IDs
-                var insiderRoles = new Dictionary<string, ulong>
-                {
-                    { "insiders-info-w11-canary", cfgjson.UserRoles.InsiderCanary },
-                    { "insiders-info-w11-dev", cfgjson.UserRoles.InsiderDev },
-                    { "insiders-info-w11-beta", cfgjson.UserRoles.InsiderBeta },
-                    { "insiders-info-w11-rp", cfgjson.UserRoles.InsiderRP },
-                    { "insiders-info-pt", cfgjson.UserRoles.PatchTuesday }
-                };
+                var member = await e.Guild.CheckAndGetMemberAsync(e.User.Id);
 
                 // Get a list of the member's current roles that we can add to or remove from
                 // Then we can apply this in a single request with member.ModifyAsync to avoid making repeated member update requests
                 List<DiscordRole> memberRoles = member.Roles.ToList();
 
-                var selection = e.Values.Select(x => insiderRoles[x]).ToList();
-
-                foreach (var roleId in insiderRoles.Values)
+                // Get Insider roles
+                List<DiscordRole> insiderRoles = [];
+                foreach (var roleId in Program.cfgjson.InsiderRoles)
                 {
-                    var role = await e.Guild.GetRoleAsync(roleId);
+                    insiderRoles.Add(await e.Guild.GetRoleAsync(roleId));
+                }
 
-                    if (selection.Contains(roleId))
+                var selection = e.Values.Select(x => Convert.ToUInt64(x)).ToList();
+
+                foreach (var role in insiderRoles)
+                {
+                    if (selection.Contains(role.Id))
                     {
                         // Member should have the role
                         if (!memberRoles.Contains(role))
@@ -313,7 +305,11 @@ namespace Cliptok.Events
                 }
 
                 // Apply roles
-                await member.ModifyAsync(x => x.Roles = memberRoles);
+                await member.ModifyAsync(x =>
+                {
+                    x.Roles = memberRoles;
+                    x.AuditLogReason = $"Insider roles selected in #{e.Channel.Name}";
+                });
 
                 await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent($"{cfgjson.Emoji.Success} Your Insider roles have been updated!").AsEphemeral(true));
             }
@@ -325,21 +321,13 @@ namespace Cliptok.Events
                 await e.Interaction.DeferAsync(ephemeral: true);
 
                 // Get member
-                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                var member = await e.Guild.CheckAndGetMemberAsync(e.User.Id);
 
                 // Get insider chat role
-                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderChat);
+                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.InsiderChatRole);
 
                 // Check whether member already has any insider roles
-                var insiderRoles = new List<ulong>()
-                {
-                    cfgjson.UserRoles.InsiderCanary,
-                    cfgjson.UserRoles.InsiderDev,
-                    cfgjson.UserRoles.InsiderBeta,
-                    cfgjson.UserRoles.InsiderRP,
-                    cfgjson.UserRoles.PatchTuesday
-                };
-                if (member.Roles.Any(x => insiderRoles.Contains(x.Id)))
+                if (Program.cfgjson.InsiderRoles is not null && member.Roles.Any(x => Program.cfgjson.InsiderRoles.Contains(x.Id)))
                 {
                     // Member already has an insider role, thus already has access to #insiders
                     // No need for the chat role too
@@ -383,9 +371,9 @@ namespace Cliptok.Events
                 await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
 
                 // Give member insider chat role
-                var member = await e.Guild.GetMemberAsync(e.User.Id);
-                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderChat);
-                await member.GrantRoleAsync(insiderChatRole);
+                var member = await e.Guild.CheckAndGetMemberAsync(e.User.Id);
+                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.InsiderChatRole);
+                await member.GrantRoleAsync(insiderChatRole, $"Insiders chat access role selected in #{e.Channel.Name}");
 
                 // Respond
                 await e.Interaction.EditFollowupMessageAsync(e.Message.Id, new DiscordWebhookBuilder().WithContent($"{cfgjson.Emoji.Success} You have been given the {insiderChatRole.Mention} role!"));
@@ -398,12 +386,72 @@ namespace Cliptok.Events
                 await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredMessageUpdate);
 
                 // Get member
-                var member = await e.Guild.GetMemberAsync(e.User.Id);
+                var member = await e.Guild.CheckAndGetMemberAsync(e.User.Id);
 
-                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.UserRoles.InsiderChat);
-                await member.RevokeRoleAsync(insiderChatRole);
+                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.InsiderChatRole);
+                await member.RevokeRoleAsync(insiderChatRole, $"Insiders chat access role removed in #{e.Channel.Name}");
 
                 await e.Interaction.EditFollowupMessageAsync(e.Message.Id, new DiscordWebhookBuilder().WithContent($"{cfgjson.Emoji.Success} You have been removed from the {insiderChatRole.Mention} role!"));
+            }
+            else if (e.Id == "reminder-delete-dropdown-callback")
+            {
+                Reminder reminder;
+                try
+                {
+                    reminder =
+                        JsonConvert.DeserializeObject<Reminder>(
+                            await Program.redis.HashGetAsync("reminders", e.Values[0]));
+                }
+                catch
+                {
+                    await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource,
+                        new DiscordInteractionResponseBuilder()
+                            .WithContent($"{Program.cfgjson.Emoji.Error} That reminder was already deleted!")
+                            .AsEphemeral());
+                    return;
+                }
+
+                await Program.redis.HashDeleteAsync("reminders", e.Values[0]);
+
+                await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource,
+                    new DiscordInteractionResponseBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Success} Reminder deleted successfully!").AsEphemeral());
+            }
+            else if (e.Id == "reminder-modify-dropdown-callback")
+            {
+                Reminder reminder;
+                try
+                {
+                    reminder = JsonConvert.DeserializeObject<Reminder>(await Program.redis.HashGetAsync("reminders", e.Values[0]));
+                }
+                catch
+                {
+                    await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource,
+                        new DiscordInteractionResponseBuilder().WithContent($"{Program.cfgjson.Emoji.Error} Sorry, something unexpected happened! Please try again or contact the bot owner(s) for help."));
+                    return;
+                }
+
+                if (reminder is null)
+                {
+                    await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource,
+                        new DiscordInteractionResponseBuilder().WithContent($"{Program.cfgjson.Emoji.Error} Sorry, something unexpected happened! Please try again or contact the bot owner(s) for help."));
+                    return;
+                }
+
+                if (reminder.UserId != e.Interaction.User.Id)
+                {
+                    await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource,
+                        new DiscordInteractionResponseBuilder()
+                        .WithContent("Only the person who set that reminder can modify it!").AsEphemeral());
+                    return;
+                }
+
+                ReminderModifyCache[e.Interaction.User.Id] = reminder;
+
+                await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.Modal,
+                    new DiscordModalBuilder().WithCustomId("reminder-modify-modal-callback").WithTitle("Modify a Reminder")
+                    .AddTextInput(new DiscordTextInputComponent("reminder-modify-time-input", placeholder: "in about " + TimeHelpers.TimeToPrettyFormat(reminder.ReminderTime.Subtract(DateTime.UtcNow).Add(TimeSpan.FromMinutes(1)), false), required: false), "When do you want to be reminded?")
+                    .AddTextInput(new DiscordTextInputComponent("reminder-modify-text-input", placeholder: reminder.ReminderText, required: false), "What do you want to be reminded about?"));
             }
             else
             {
@@ -418,13 +466,13 @@ namespace Cliptok.Events
             {
                 // Get roles & make mentionable
                 var ctx = Commands.AnnouncementCmds.EditAnnounceCache[e.Interaction.User.Id];
-                DiscordRole role1 = await e.Interaction.Guild.GetRoleAsync(Program.cfgjson.AnnouncementRoles[ctx.role1]);
+                DiscordRole role1 = await e.Interaction.Guild.GetRoleAsync(ctx.role1);
                 await role1.ModifyAsync(mentionable: true);
 
                 DiscordRole role2 = null;
-                if (ctx.role2 is not null)
+                if (ctx.role2 != default)
                 {
-                    role2 = await e.Interaction.Guild.GetRoleAsync(Program.cfgjson.AnnouncementRoles[ctx.role2]);
+                    role2 = await e.Interaction.Guild.GetRoleAsync(ctx.role2);
                     await role2.ModifyAsync(mentionable: true);
                 }
 
@@ -450,6 +498,135 @@ namespace Cliptok.Events
                 await role1.ModifyAsync(mentionable: false);
                 if (role2 is not null)
                     await role2.ModifyAsync(mentionable: false);
+            }
+            else if (e.Id == "remind-me-about-this-modal-callback")
+            {
+                await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.DeferredChannelMessageWithSource,
+                    new DiscordInteractionResponseBuilder().AsEphemeral(true));
+
+                var targetMessage = Commands.ContextMenuCmds.ReminderInteractionCache[e.Interaction.User.Id];
+
+                var timeInput = (e.Values["remind-me-about-this-time-input"] as TextInputModalSubmission).Value;
+
+                var (time, error) = ReminderHelpers.ParseReminderTime(timeInput);
+                if (time is null)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent(error).AsEphemeral());
+                    return;
+                }
+
+                var reminder = new Reminder
+                {
+                    UserId = e.Interaction.User.Id,
+                    ChannelId = e.Interaction.Channel.Id,
+                    MessageId = targetMessage.Id,
+                    SetTime = DateTime.UtcNow,
+                    ReminderTime = time.Value,
+                    ReminderId = await ReminderHelpers.GenerateUniqueReminderIdAsync(),
+                    ReminderText = "",
+                    GuildId = e.Interaction.Guild is null ? "@me" : e.Interaction.Guild.Id.ToString()
+                };
+
+                await Program.redis.HashSetAsync("reminders", reminder.ReminderId.ToString(), JsonConvert.SerializeObject(reminder));
+
+                var unixTime = ((DateTimeOffset)time).ToUnixTimeSeconds();
+                await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                    .WithContent($"{Program.cfgjson.Emoji.Success} I'll try my best to remind you about that on <t:{unixTime}:f> (<t:{unixTime}:R>)"));
+
+                Commands.ContextMenuCmds.ReminderInteractionCache.Remove(e.Interaction.User.Id);
+            }
+            else if (e.Id == "reminder-modify-modal-callback")
+            {
+                await e.Interaction.DeferAsync(true);
+
+                var time = (e.Values["reminder-modify-time-input"] as TextInputModalSubmission).Value;
+                var text = (e.Values["reminder-modify-text-input"] as TextInputModalSubmission).Value;
+                string id = null;
+                if (e.Values.ContainsKey("reminder-modify-id-input"))
+                    id = (e.Values["reminder-modify-id-input"] as TextInputModalSubmission).Value;
+
+                Reminder reminder;
+                try
+                {
+                    if (!ReminderModifyCache.TryGetValue(e.Interaction.User.Id, out reminder))
+                    {
+                        if (!Constants.RegexConstants.reminder_id_rx.IsMatch(id))
+                        {
+                            await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                                .WithContent($"{Program.cfgjson.Emoji.Error} The reminder ID you provided isn't correct! Please try again.")
+                                .AsEphemeral());
+                            return;
+                        }
+
+                        reminder = JsonConvert.DeserializeObject<Reminder>(await Program.redis.HashGetAsync("reminders", id));
+                    }
+                }
+                catch (ArgumentNullException)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} I couldn't find a reminder with that ID! Please try again.")
+                        .AsEphemeral());
+                    return;
+                }
+                catch
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} Sorry, something unexpected happened! Please try again or contact the bot owner(s) for help."));
+                    return;
+                }
+
+                if (reminder.UserId != e.Interaction.User.Id)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} Only the person who set that reminder can modify it!").AsEphemeral());
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(time))
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Information} Reminder unchanged."));
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(text)) reminder.ReminderText = text;
+
+                if (!string.IsNullOrWhiteSpace(time))
+                {
+                    var (parsedTime, error) = ReminderHelpers.ParseReminderTime(time);
+                    if (parsedTime is null)
+                    {
+                        await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent(error).AsEphemeral());
+                        return;
+                    }
+
+                    reminder.ReminderTime = parsedTime.Value;
+                }
+
+                await Program.redis.HashSetAsync("reminders", reminder.ReminderId, JsonConvert.SerializeObject(reminder));
+
+                await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                    .WithContent($"{Program.cfgjson.Emoji.Success} Reminder modified successfully!"));
+
+                ReminderModifyCache.Remove(e.Interaction.User.Id);
+            }
+            else if (e.Id == "reminder-delete-modal-callback")
+            {
+                await e.Interaction.DeferAsync(true);
+
+                var id = (e.Values["reminder-delete-id-input"] as TextInputModalSubmission).Value;
+
+                var (reminder, error) = await ReminderHelpers.GetReminderAsync(id, e.Interaction.User.Id);
+                if (reminder is null)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder().WithContent(error).AsEphemeral());
+                    return;
+                }
+
+                await Program.redis.HashDeleteAsync("reminders", id);
+
+                await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                    .WithContent($"{Program.cfgjson.Emoji.Success} Reminder deleted successfully!"));
+
+                ReminderModifyCache.Remove(e.Interaction.User.Id);
             }
             else
             {
@@ -478,7 +655,7 @@ namespace Cliptok.Events
                             );
                     }
             }
-            e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Error during invocation of interaction command {command} by {user}", e.Context.Command.Name, $"{DiscordHelpers.UniqueUsername(e.Context.User)}");
+            e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Error during invocation of interaction command {command} by user {user}", e.Context.Command.Name, e.Context.User.Id);
         }
 
     }

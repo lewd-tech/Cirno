@@ -4,49 +4,50 @@ namespace Cliptok.Commands
 {
     public class UtilityCmds
     {
-        [Command("Dump message data")]
-        [SlashCommandTypes(DiscordApplicationCommandType.MessageContextMenu)]
-        [AllowedProcessors(typeof(MessageCommandProcessor))]
-        public async Task DumpMessage(MessageCommandContext ctx, DiscordMessage targetMessage)
+        [Command("grant")]
+        [Description("Grant a user access to the server, bypassing any verification requirements.")]
+        [AllowedProcessors(typeof(SlashCommandProcessor), typeof(TextCommandProcessor))]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.TrialModerator), RequirePermissions(userPermissions: [DiscordPermission.ModerateMembers], botPermissions: [])]
+        public async Task Grant(CommandContext ctx, [Parameter("user"), Description("The user to grant server access to.")] DiscordUser user)
         {
-            var rawMsgData = JsonConvert.SerializeObject(targetMessage, Formatting.Indented);
-            await ctx.RespondAsync((await StringHelpers.CodeOrHasteBinAsync(rawMsgData, "json")).Text, ephemeral: true);
+            DiscordMember member = default;
+            try
+            {
+                member = await ctx.Guild.CheckAndGetMemberAsync(user.Id);
+            }
+            catch (Exception)
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} That user does not appear to be in the server!");
+                return;
+            }
+
+            if (!DiscordHelpers.AllowedToMod(await ctx.Guild.CheckAndGetMemberAsync(ctx.Client.CurrentUser.Id), member))
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} I don't have permission to grant {member.Mention}! Check the role order.");
+                return;
+            }
+
+            if (member.MemberFlags.Value.HasFlag(DiscordMemberFlags.BypassesVerification))
+            {
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} {member.Mention} has already been allowed access to the server!");
+                return;
+            }
+
+            await member.ModifyAsync(x =>
+            {
+                x.MemberFlags = (DiscordMemberFlags)member.MemberFlags | DiscordMemberFlags.BypassesVerification;
+                x.AuditLogReason = $"grant command used by {DiscordHelpers.UniqueUsername(ctx.User)}";
+            });
+
+            await ctx.RespondAsync($"{Program.cfgjson.Emoji.Success} {member.Mention} can now access the server!");
         }
 
-        [Command("Show Avatar")]
-        [SlashCommandTypes(DiscordApplicationCommandType.UserContextMenu)]
-        [AllowedProcessors(typeof(UserCommandProcessor))]
-        public async Task ContextAvatar(UserCommandContext ctx, DiscordUser targetUser)
-        {
-            string avatarUrl = await LykosAvatarMethods.UserOrMemberAvatarURL(targetUser, ctx.Guild);
-
-            DiscordEmbedBuilder embed = new DiscordEmbedBuilder()
-                .WithColor(new DiscordColor(0xC63B68))
-                .WithTimestamp(DateTime.UtcNow)
-                .WithImageUrl(avatarUrl)
-                .WithAuthor(
-                    $"Avatar for {targetUser.Username} (Click to open in browser)",
-                    avatarUrl
-                );
-
-            await ctx.RespondAsync(null, embed, ephemeral: true);
-        }
-
-        [Command("User Information")]
-        [SlashCommandTypes(DiscordApplicationCommandType.UserContextMenu)]
-        [AllowedProcessors(typeof(UserCommandProcessor))]
-        public async Task ContextUserInformation(UserCommandContext ctx, DiscordUser targetUser)
-        {
-            await ctx.RespondAsync(embed: await DiscordHelpers.GenerateUserEmbed(targetUser, ctx.Guild), ephemeral: true);
-        }
-
-        [Command("edittextcmd")]
-        [TextAlias("edit")]
+        [Command("edit")]
         [Description("Edit a message.")]
-        [AllowedProcessors(typeof(TextCommandProcessor))]
-        [RequireHomeserverPerm(ServerPermLevel.Moderator)]
+        [AllowedProcessors(typeof(TextCommandProcessor), typeof(SlashCommandProcessor))]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator), RequirePermissions(userPermissions: [DiscordPermission.ModerateMembers], botPermissions: [])]
         public async Task Edit(
-            TextCommandContext ctx,
+            CommandContext ctx,
             [Description("The ID of the message to edit.")] ulong messageId,
             [RemainingText, Description("New message content.")] string content
         )
@@ -56,18 +57,21 @@ namespace Cliptok.Commands
             if (msg is null || msg.Author.Id != ctx.Client.CurrentUser.Id)
                 return;
 
-            await ctx.Message.DeleteAsync();
+            if (ctx is TextCommandContext tctx)
+                await tctx.Message.DeleteAsync();
 
             await msg.ModifyAsync(content);
+
+            if (ctx is SlashCommandContext sctx)
+                await sctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Message edited successfully!", ephemeral: true);
         }
 
-        [Command("editappendtextcmd")]
-        [TextAlias("editappend")]
+        [Command("editappend")]
         [Description("Append content to an existing bot message with a newline.")]
-        [AllowedProcessors(typeof(TextCommandProcessor))]
-        [RequireHomeserverPerm(ServerPermLevel.Moderator)]
+        [AllowedProcessors(typeof(TextCommandProcessor), typeof(SlashCommandProcessor))]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator), RequirePermissions(userPermissions: [DiscordPermission.ModerateMembers], botPermissions: [])]
         public async Task EditAppend(
-            TextCommandContext ctx,
+            CommandContext ctx,
             [Description("The ID of the message to edit")] ulong messageId,
             [RemainingText, Description("Content to append on the end of the message.")] string content
         )
@@ -80,59 +84,23 @@ namespace Cliptok.Commands
             var newContent = msg.Content + "\n" + content;
             if (newContent.Length > 2000)
             {
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} New content exceeded 2000 characters.");
+                await ctx.RespondAsync($"{Program.cfgjson.Emoji.Error} New content exceeded 2000 characters.", ephemeral: true);
             }
             else
             {
-                await ctx.Message.DeleteAsync();
+                if (ctx is TextCommandContext tctx)
+                    await tctx.Message.DeleteAsync();
                 await msg.ModifyAsync(newContent);
-            }
-        }
 
-        [Command("timestamptextcmd")]
-        [TextAlias("timestamp", "ts", "time")]
-        [Description("Returns various timestamps for a given Discord ID/snowflake")]
-        [AllowedProcessors(typeof(TextCommandProcessor))]
-        [HomeServer]
-        class TimestampCmds
-        {
-            [DefaultGroupCommand]
-            [Command("unix")]
-            [TextAlias("u", "epoch")]
-            [Description("Returns the Unix timestamp of a given Discord ID/snowflake")]
-            public async Task TimestampUnixCmd(TextCommandContext ctx, [Description("The ID/snowflake to fetch the Unix timestamp for")] ulong snowflake)
-            {
-                var msSinceEpoch = snowflake >> 22;
-                var msUnix = msSinceEpoch + 1420070400000;
-                await ctx.RespondAsync($"{msUnix / 1000}");
+                if (ctx is SlashCommandContext sctx)
+                    await sctx.RespondAsync($"{Program.cfgjson.Emoji.Success} Message edited successfully!", ephemeral: true);
             }
-
-            [Command("relative")]
-            [TextAlias("r")]
-            [Description("Returns the amount of time between now and a given Discord ID/snowflake")]
-            public async Task TimestampRelativeCmd(TextCommandContext ctx, [Description("The ID/snowflake to fetch the relative timestamp for")] ulong snowflake)
-            {
-                var msSinceEpoch = snowflake >> 22;
-                var msUnix = msSinceEpoch + 1420070400000;
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} <t:{msUnix / 1000}:R>");
-            }
-
-            [Command("fulldate")]
-            [TextAlias("f", "datetime")]
-            [Description("Returns the fully-formatted date and time of a given Discord ID/snowflake")]
-            public async Task TimestampFullCmd(TextCommandContext ctx, [Description("The ID/snowflake to fetch the full timestamp for")] ulong snowflake)
-            {
-                var msSinceEpoch = snowflake >> 22;
-                var msUnix = msSinceEpoch + 1420070400000;
-                await ctx.RespondAsync($"{Program.cfgjson.Emoji.ClockTime} <t:{msUnix / 1000}:F>");
-            }
-
         }
 
         [Command("tellraw")]
         [Description("You know what you're here for.")]
         [AllowedProcessors(typeof(SlashCommandProcessor), typeof(TextCommandProcessor))]
-        [RequireHomeserverPerm(ServerPermLevel.Moderator), RequirePermissions(DiscordPermission.ModerateMembers)]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator), RequirePermissions(userPermissions: [DiscordPermission.ModerateMembers], botPermissions: [])]
         public async Task TellRaw(CommandContext ctx, [Parameter("channel"), Description("Either mention or ID. Not a name.")] string discordChannel, [Parameter("input"), Description("???")] string input, [Parameter("reply_msg_id"), Description("ID of message to use in a reply context.")] string replyID = "0", [Parameter("pingreply"), Description("Ping pong.")] bool pingreply = true)
         {
             if (ctx is SlashCommandContext)
@@ -190,7 +158,7 @@ namespace Cliptok.Commands
         [Command("bulklogs")]
         [Description("Query bulk msg logs for a given user.")]
         [AllowedProcessors(typeof(SlashCommandProcessor), typeof(TextCommandProcessor))]
-        [RequireHomeserverPerm(ServerPermLevel.Moderator), RequirePermissions(DiscordPermission.ModerateMembers)]
+        [HomeServer, RequireHomeserverPerm(ServerPermLevel.Moderator), RequirePermissions(userPermissions: [DiscordPermission.ModerateMembers], botPermissions: [])]
         public async Task BulkLogsCmd(CommandContext ctx, [Parameter("user"), Description("The user you're looking for bulk logs containing")] DiscordUser user)
         {
             if (!Program.cfgjson.EnablePersistentDb)

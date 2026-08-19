@@ -129,6 +129,21 @@ namespace Cliptok.Events
                 {
                     var cachedMessage = await dbContext.Messages.Include(m => m.User).Include(m => m.Sticker).FirstOrDefaultAsync(m => m.Id == e.Message.Id);
 
+                    // If this was a public warning message, remove the message from the warning record to avoid errors later if the warning is edited/deleted
+                    if (cachedMessage is not null && cachedMessage.User.Id == client.CurrentUser.Id && (Constants.RegexConstants.auto_warn_msg_rx.IsMatch(cachedMessage.Content) || Constants.RegexConstants.warn_msg_rx.IsMatch(cachedMessage.Content)))
+                    {
+                        var warnedUserId = Convert.ToUInt64(Constants.RegexConstants.user_rx.Match(cachedMessage.Content).Groups[1].Value);
+                        var userWarnings = await Program.redis.HashGetAllAsync(warnedUserId.ToString());
+                        var thisWarning = userWarnings.Select(x => JsonConvert.DeserializeObject<UserWarning>(x.Value))
+                            .FirstOrDefault(x => x.ContextMessageReference?.MessageId == cachedMessage.Id);
+
+                        if (thisWarning != default)
+                        {
+                            thisWarning.ContextMessageReference = null;
+                            await Program.redis.HashSetAsync(warnedUserId.ToString(), thisWarning.WarningId, JsonConvert.SerializeObject(thisWarning));
+                        }
+                    }
+
                     // we store bot messages but don't log them right now
                     if (cachedMessage is not null && !cachedMessage.User.IsBot)
                     {
@@ -138,8 +153,14 @@ namespace Cliptok.Events
                     // remove from cache so the message isn't double-logged if the channel is later deleted
                     if (cachedMessage is not null)
                     {
-                        dbContext.Messages.Remove(cachedMessage);
-                        await dbContext.SaveChangesAsync();
+                        try
+                        {
+                            dbContext.Messages.Remove(cachedMessage);
+                            await dbContext.SaveChangesAsync();
+                        } catch (Exception ex)
+                        {
+                            client.Logger.LogError(Program.CliptokEventID, ex, "Failed to remove cached message from database: {message}", DiscordHelpers.MessageLink(cachedMessage));
+                        }
                     }
                 }
             }
@@ -177,6 +198,25 @@ namespace Cliptok.Events
                 using (var dbContext = new CliptokDbContext())
                 {
                     var cachedMessages = dbContext.Messages.Include(m => m.User).Include(m => m.Sticker).Where(m => messageIds.Contains(m.Id));
+
+                    // If this was a public warning message, remove the message from the warning record to avoid errors later if the warning is edited/deleted
+                    foreach (var cachedMessage in cachedMessages)
+                    {
+                        if (cachedMessage.User.Id == client.CurrentUser.Id && (Constants.RegexConstants.auto_warn_msg_rx.IsMatch(cachedMessage.Content) || Constants.RegexConstants.warn_msg_rx.IsMatch(cachedMessage.Content)))
+                        {
+                            var warnedUserId = Convert.ToUInt64(Constants.RegexConstants.user_rx.Match(cachedMessage.Content).Groups[1].Value);
+                            var userWarnings = await Program.redis.HashGetAllAsync(warnedUserId.ToString());
+                            var thisWarning = userWarnings.Select(x => JsonConvert.DeserializeObject<UserWarning>(x.Value))
+                                .FirstOrDefault(x => x.ContextMessageReference?.MessageId == cachedMessage.Id);
+
+                            if (thisWarning != default)
+                            {
+                                thisWarning.ContextMessageReference = null;
+                                await Program.redis.HashSetAsync(warnedUserId.ToString(), thisWarning.WarningId, JsonConvert.SerializeObject(thisWarning));
+                            }
+                        }
+                    }
+
                     var cachedUsers = dbContext.Users.Where(u => cachedMessages.Select(m => m.User.Id).Contains(u.Id)).ToList();
                     var (dumpMessage, pasteUrl) = await LogChannelHelper.CreateDumpMessageAsync($"{Program.cfgjson.Emoji.Deleted} {e.Messages.Count} messages were deleted from {e.Channel.Mention}, {cachedMessages.ToList().Count} were logged:", cachedMessages.ToList(), e.Channel);
                     var logMsg = await LogChannelHelper.LogMessageAsync("messages", dumpMessage);
@@ -230,6 +270,24 @@ namespace Cliptok.Events
                 }
                 #endregion
 
+                #region auto-publish
+                if (!isAnEdit
+                    && !wasAutoModBlock
+                    && message.Channel.Type == DiscordChannelType.News
+                    && Program.cfgjson.AutoPublishChannels.Contains(channel.Id)
+                    && (message.BaseMessage.Flags & DiscordMessageFlags.Crossposted) != DiscordMessageFlags.Crossposted)
+                {
+                    try
+                    {
+                        await channel.CrosspostMessageAsync(message.BaseMessage);
+                    }
+                    catch (Exception ex)
+                    {
+                        Program.discord.Logger.LogWarning(ex, "Failed to auto-publish message {message}", DiscordHelpers.MessageLink(message.BaseMessage));
+                    }
+                }
+                #endregion
+
                 if (!limitFilters)
                 {
                     await HandleMessageRelaysAsync(client, message, channel, isAnEdit);
@@ -254,15 +312,7 @@ namespace Cliptok.Events
                 #endregion
 
                 #region retrieve member object
-                DiscordMember member;
-                try
-                {
-                    member = await channel.Guild.GetMemberAsync(message.Author.Id);
-                }
-                catch (DSharpPlus.Exceptions.NotFoundException)
-                {
-                    member = default;
-                }
+                var member = await channel.Guild.CheckAndGetMemberAsync(message.Author.Id);
 
                 if (member == default)
                     return;
@@ -581,15 +631,9 @@ namespace Cliptok.Events
             {
                 Program.discord.Logger.LogDebug(Program.CliptokEventID, "Processing modmail message {message} in {channel}", message.Id, channel);
                 var idString = modmaiL_rx.Match(message.Embeds[0].Footer.Text).Groups[1].Captures[0].Value;
-                DiscordMember modmailMember = default;
-                try
-                {
-                    modmailMember = await channel.Guild.GetMemberAsync(Convert.ToUInt64(idString));
-                }
-                catch (DSharpPlus.Exceptions.NotFoundException)
-                {
+                var modmailMember = await channel.Guild.CheckAndGetMemberAsync(Convert.ToUInt64(idString));
+                if (modmailMember is null)
                     return;
-                }
 
                 DiscordMessageBuilder memberWarnInfo = new();
 
@@ -702,13 +746,14 @@ namespace Cliptok.Events
             {
                 string content = $"{Program.cfgjson.Emoji.Warning} Detected potential scam message by {message.Author.Mention} in {channel.Mention}:";
 
-                await InvestigationsHelpers.SendInfringingMessaageAsync(
+                await InvestigationsHelpers.SendInfringingMessageAsync(
                     "investigations",
                     message,
                     null,
                     DiscordHelpers.MessageLink(message),
                     content: content,
-                    colour: new DiscordColor(0xFEC13D)
+                    colour: new DiscordColor(0xFEC13D),
+                    userWasWarned: true
                 );
             }
             #endregion
@@ -735,7 +780,7 @@ namespace Cliptok.Events
 
                         (string name, string value, bool inline) extraField = new("Match", flaggedWord, true);
 
-                        await InvestigationsHelpers.SendInfringingMessaageAsync(
+                        await InvestigationsHelpers.SendInfringingMessageAsync(
                             "investigations",
                             message,
                             listItem.Reason,
@@ -766,7 +811,7 @@ namespace Cliptok.Events
                     // Message has no content but 3+ attachments
                     || ((message.Content is null || message.Content == "") && message.Attachments is not null && message.Attachments.Count >= 3)
                 )
-                && (permLevel == ServerPermLevel.Nothing || permLevel == ServerPermLevel.Tier1))
+                && (permLevel <= ServerPermLevel.Tier1))
             {
                 // Message contains 3 or more image urls, and was sent by Tier 0 or Tier 1 member; autowarn for probable scam message
 
@@ -775,9 +820,34 @@ namespace Cliptok.Events
                 else
                     Program.discord.Logger.LogDebug("Message {messageId} in {channelId} by user {userId} triggered scam image URL filter", message.Id, channel.Id, message.Author.Id);
 
-                await DeleteAndWarnAsync(message, "Attempted scam message", client, wasAutoModBlock: wasAutoModBlock, messageContentOverride: messageContentOverride);
+                await DiscordHelpers.ThreadChannelAwareDeleteMessageAsync(message);
 
-                return true;
+                string reason = "Possible scam message";
+
+                if (!Program.redis.SetContains("scamMessagePardoned", message.Author.Id.ToString()))
+                {
+                    await Program.redis.SetAddAsync("scamMessagePardoned", message.Author.Id.ToString());
+                    string output = $"{Program.cfgjson.Emoji.Information} {message.Author.Mention}, your message was deleted because it matched patterns of common scam messages." +
+                            $"\nWhen sending multiple images, please either send them separately or include some text in your message to avoid triggering filters.";
+                    DiscordMessage msg = await channel.SendMessageAsync(output);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
+                    return true;
+                }
+                else
+                {
+                    string output = $"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**\n"
+                        + $"When sending multiple images, please either send them separately or include some text in your message to avoid triggering filters.";
+                    DiscordMessageBuilder messageBuilder = new();
+                    messageBuilder.WithContent(output);
+                    DiscordMessage msg = await channel.SendMessageAsync(output);
+
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, userWasWarned: true);
+                    var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, channel, " automatically ");
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, userWasWarned: true);
+
+                    return true;
+                }
             }
             return false;
         }
@@ -800,8 +870,8 @@ namespace Cliptok.Events
                 var mentionCount = message.MentionedUsers is not null && message.MentionedUsers.Count > 0 ? message.MentionedUsers.Count : message.MentionedUsersCount;
                 string content = $"{Program.cfgjson.Emoji.Banned} {message.Author.Mention} was automatically banned for mentioning **{mentionCount}** users.";
                 var chatMsg = await channel.SendMessageAsync(content);
-                _ = InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
-                _ = InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                _ = InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                _ = InvestigationsHelpers.SendInfringingMessageAsync("mod", message, "Mass mentions (Ban threshold)", DiscordHelpers.MessageLink(chatMsg), content: content, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
                 return true;
             }
             return false;
@@ -818,6 +888,12 @@ namespace Cliptok.Events
                 && !wasAutoModBlock
                 && (messageContentOverride is not null && messageContentOverride != "" || attachmentNames.Count > 0))
             {
+                if (Program.cfgjson.DuplicateMessageExcludedChannels.Contains(message.ChannelId)
+                    || (message.Channel.ParentId is not null && Program.cfgjson.DuplicateMessageExcludedChannels.Contains((ulong)message.Channel.ParentId)))
+                {
+                    return false;
+                }
+
                 if (
                     duplicateMessageCache.ContainsKey(message.Author.Id)
                     && duplicateMessageCache[message.Author.Id].Content == messageContentOverride
@@ -844,12 +920,7 @@ namespace Cliptok.Events
 
                         deletedMessageCache.Add(message.Id);
 
-                        var attachmentUrls = message.Attachments?.Select(a => a.Url).ToList() ?? [];
-                        (string name, string value, bool inline) attachmentsField = attachmentUrls.Count > 0
-                            ? ("Attachments", string.Join("\n", attachmentUrls), false)
-                            : default;
-
-                        await DeleteAndWarnAsync(message, "Duplicate message spam", client, attachmentsField, wasAutoModBlock: wasAutoModBlock, messageContentOverride: messageContentOverride);
+                        await DeleteAndWarnAsync(message, "Duplicate message spam", client, wasAutoModBlock: wasAutoModBlock, messageContentOverride: messageContentOverride);
                         return true;
                     }
                 }
@@ -998,13 +1069,13 @@ namespace Cliptok.Events
                     string reason = "Sent a malicious Discord invite";
 
                     DiscordMessage msg = await WarningHelpers.SendPublicWarningMessageAndDeleteInfringingMessageAsync(message, $"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**", wasAutoModBlock);
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, userWasWarned: true);
                     var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, channel, " automatically ");
 
                     string responseToSend = $"```json\n{JsonConvert.SerializeObject(maliciousCache)}\n```";
 
                     (string name, string value, bool inline) extraField = new("Cached API response", responseToSend, false);
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, extraField, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, extraField, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, userWasWarned: true);
 
                     match = true;
                     break;
@@ -1081,7 +1152,7 @@ namespace Cliptok.Events
 
                     string reason = "Mass emoji";
 
-                    if (permLevel == ServerPermLevel.Nothing && !Program.redis.HashExists("emojiPardoned", message.Author.Id.ToString()))
+                    if (permLevel <= ServerPermLevel.Nothing && !Program.redis.HashExists("emojiPardoned", message.Author.Id.ToString()))
                     {
                         await Program.redis.HashSetAsync("emojiPardoned", member.Id.ToString(), false);
                         string pardonOutput;
@@ -1094,8 +1165,8 @@ namespace Cliptok.Events
                             pardonOutput = $"{Program.cfgjson.Emoji.Information} {message.Author.Mention} Your message was automatically deleted for mass emoji.";
 
                         var msgOut = await WarningHelpers.SendPublicWarningMessageAndDeleteInfringingMessageAsync(message, pardonOutput, wasAutoModBlock);
-                        await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msgOut), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
-                        await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, DiscordHelpers.MessageLink(msgOut), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                        await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msgOut), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                        await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, DiscordHelpers.MessageLink(msgOut), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
                         return true;
                     }
 
@@ -1231,8 +1302,8 @@ namespace Cliptok.Events
                     {
                         msg = await channel.SendMessageAsync(messageBuilder);
                     }
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
                     return true;
                 }
                 else
@@ -1253,9 +1324,9 @@ namespace Cliptok.Events
                         msg = await channel.SendMessageAsync(messageBuilder);
                     }
 
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, userWasWarned: true);
                     var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, channel, " automatically ");
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, userWasWarned: true);
 
                     return true;
                 }
@@ -1286,8 +1357,8 @@ namespace Cliptok.Events
                     string output = $"{Program.cfgjson.Emoji.Information} {message.Author.Mention}, your message was deleted because it was a reply to a moderation action." +
                             $"\nPlease DM <@{Program.cfgjson.ModmailUserId}> if you would like to discuss moderation actions, as per {reason}.";
                     DiscordMessage msg = await channel.SendMessageAsync(output);
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
                     return true;
                 }
                 else
@@ -1298,9 +1369,9 @@ namespace Cliptok.Events
                     messageBuilder.WithContent(output);
                     DiscordMessage msg = await channel.SendMessageAsync(output);
 
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride);
                     var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, channel, " automatically ");
-                    await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, userWasWarned: true);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, userWasWarned: true);
 
                     return true;
                 }
@@ -1335,13 +1406,17 @@ namespace Cliptok.Events
                 {
                     var msg = await channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**\n"
                         + $"Please keep requests for tech support inside {techSupportChannelsText} to avoid punishment.");
-                    await WarningHelpers.GiveWarningAsync(message.Author, Program.discord.CurrentUser, reason, msg, channel, " automatically ");
+                    var warning = await WarningHelpers.GiveWarningAsync(message.Author, Program.discord.CurrentUser, reason, msg, channel, " automatically ");
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, userWasWarned: true);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, messageContentOverride: messageContentOverride, userWasWarned: true);
                 }
                 else // also false when set does not exist
                 {
                     await Program.redis.SetAddAsync("ctsPingPardons", message.Author.Id);
-                    await channel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} {message.Author.Mention}, you mentioned the tech support role outside of a tech support channel.\n"
+                    var msg = await channel.SendMessageAsync($"{Program.cfgjson.Emoji.Information} {message.Author.Mention}, you mentioned the tech support role outside of a tech support channel.\n"
                         + $"Please keep requests for tech support inside {techSupportChannelsText} to avoid further punishment.");
+                    await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
+                    await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, DiscordHelpers.MessageLink(msg), messageContentOverride: messageContentOverride);
                 }
 
                 return true;
@@ -1378,14 +1453,14 @@ namespace Cliptok.Events
 
             try
             {
-                _ = InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, null, wasAutoModBlock: wasAutoModBlock, messageContentOverride: messageContentOverride, useCodeBlock: useCodeBlock);
+                _ = InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, null, wasAutoModBlock: wasAutoModBlock, messageContentOverride: messageContentOverride, useCodeBlock: useCodeBlock, userWasWarned: true);
             }
             catch
             {
                 // still warn anyway
             }
             var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, channel, " automatically ");
-            await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, extraField, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, useCodeBlock: useCodeBlock);
+            await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, extraField, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, useCodeBlock: useCodeBlock, userWasWarned: true);
         }
 
         #endregion warning helpers
@@ -1515,13 +1590,13 @@ namespace Cliptok.Events
                 string reason = "Sent a malicious Discord invite";
 
                 DiscordMessage msg = await message.Channel.SendMessageAsync($"{Program.cfgjson.Emoji.Denied} {message.Author.Mention} was automatically warned: **{reason.Replace("`", "\\`").Replace("*", "\\*")}**");
-                await InvestigationsHelpers.SendInfringingMessaageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                await InvestigationsHelpers.SendInfringingMessageAsync("mod", message, reason, null, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, userWasWarned: true);
                 var warning = await WarningHelpers.GiveWarningAsync(message.Author, client.CurrentUser, reason, contextMessage: msg, message.Channel, " automatically ");
 
                 string responseToSend = $"```json\n{responseString}\n```";
 
                 (string name, string value, bool inline) extraField = new("API Response", responseToSend, false);
-                await InvestigationsHelpers.SendInfringingMessaageAsync("investigations", message, reason, warning.ContextLink, extraField, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock);
+                await InvestigationsHelpers.SendInfringingMessageAsync("investigations", message, reason, warning.ContextLink, extraField, messageContentOverride: messageContentOverride, wasAutoModBlock: wasAutoModBlock, userWasWarned: true);
 
                 var newEntry = JsonConvert.DeserializeObject<ServerApiResponseJson>(responseString);
                 newEntry.Invite = invite.Code;

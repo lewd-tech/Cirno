@@ -11,6 +11,8 @@ namespace Cliptok.Events
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
 
+            DiscordGuildExtensions.UsersNotInServerCache.Remove(e.Member.Id);
+
             var userLogEmbed = new DiscordEmbedBuilder()
                .WithColor(new DiscordColor(0x3E9D28))
                .WithTimestamp(DateTimeOffset.Now)
@@ -109,6 +111,8 @@ namespace Cliptok.Events
 
             if (e.Guild.Id != cfgjson.ServerID)
                 return;
+
+            DiscordGuildExtensions.UsersNotInServerCache.Add(e.Member.Id);
 
             // Attempt to check if member is cached
             bool isMemberCached = client.Guilds[e.Guild.Id].Members.ContainsKey(e.Member.Id);
@@ -222,6 +226,9 @@ namespace Cliptok.Events
                 return;
 
             var muteRole = await e.Guild.GetRoleAsync(cfgjson.MutedRole);
+            DiscordRole tqsMuteRole = default;
+            if (cfgjson.TqsMutedRole != 0)
+                tqsMuteRole = await e.Guild.GetRoleAsync(cfgjson.TqsMutedRole);
             var userMute = await redis.HashGetAsync("mutes", e.Member.Id);
 
             // If they're externally unmuted, untrack it?
@@ -229,7 +236,7 @@ namespace Cliptok.Events
             var currentTime = DateTime.UtcNow;
             var joinTime = e.Member.JoinedAt.DateTime;
             var differrence = currentTime.Subtract(joinTime).TotalSeconds;
-            if (differrence > 10 && !userMute.IsNull && !e.Member.Roles.Contains(muteRole))
+            if (differrence > 10 && !userMute.IsNull && !e.Member.Roles.Contains(muteRole) && !e.Member.Roles.Contains(tqsMuteRole))
                 redis.HashDeleteAsync("mutes", e.Member.Id);
 
             // Nickname lock check
@@ -328,7 +335,7 @@ namespace Cliptok.Events
             if (e.UserAfter.IsBot)
                 return;
 
-            var member = await homeGuild.GetMemberAsync(e.UserAfter.Id);
+            var member = await homeGuild.CheckAndGetMemberAsync(e.UserAfter.Id);
 
             // Nickname lock check
             var nicknamelock = await redis.HashGetAsync("nicknamelock", member.Id);

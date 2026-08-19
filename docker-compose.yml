@@ -63,12 +63,6 @@ services:
   #   restart: always
   #   env_file:
   #    - .exposer.env
-  # cloudflared:
-  #   image: ghcr.io/erisa/cloudflared
-  #   restart: always
-  #   command: tunnel --no-autoupdate run
-  #   environment:
-  #     - TUNNEL_TOKEN=${CLOUDFLARED_TOKEN}
   # watchtower:
   #   image: ghcr.io/nicholas-fedor/watchtower
   #   volumes:
@@ -76,7 +70,7 @@ services:
   #   command: --interval 30 --label-enable
   #   restart: always
   # tailscale:
-  #   image: tailscale/tailscale:latest
+  #   image: ghcr.io/tailscale/tailscale:latest
   #   volumes:
   #     - ./data/ts-state:/var/lib/tailscale
   #   devices:
@@ -85,10 +79,10 @@ services:
   #     - TS_AUTHKEY=${TS_AUTHKEY}
   #     - TS_STATE_DIR=/var/lib/tailscale
   #     - TS_USERSPACE=false
-  #     - TS_EXTRA_ARGS=--hostname=cirno --accept-dns=false --accept-routes=false # i'm not having my tailnet misconfigurations break cliptok
+  #     - TS_EXTRA_ARGS=--hostname=cliptok --accept-dns=false --accept-routes=false # i'm not having my tailnet misconfigurations break cliptok
   #   cap_add:
   #     - net_admin
   #     - sys_module
   #   restart: always
   #   extra_hosts:
-  #     - "paste.erisa.ts.net:100.104.163.12"
+  #     - "paste.msftcomm.ts.net:100.71.159.123"
