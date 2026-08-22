@@ -224,8 +224,6 @@
   "tqsMuteDurationHours": 2,
   "autoWarnMsgAutoDeleteDays": 3,
   "logLevel": "Information",
-  "lokiURL": "http://100.79.19.82:3100",
-  "lokiServiceName": "cirno",
   "voiceChannelPurge": false,
   "disableMicrosoftCommands": true,
   "enablePersistentDb": true
