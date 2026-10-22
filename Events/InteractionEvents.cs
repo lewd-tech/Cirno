@@ -96,7 +96,15 @@ namespace Cliptok.Events
                 }
 
                 // Get override data
-                var pendingOverride = overridesPendingAddition.GetValueOrDefault(e.Message.Id);
+                var data = overridesPendingAddition.GetValueOrDefault(e.Message.Id);
+                if (data.requestingUserId != e.Interaction.User.Id)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} Only the person who used that command can respond!").AsEphemeral(true));
+                    return;
+                }
+
+                var pendingOverride = data.pendingOverride;
                 var mockOverwrite = pendingOverride.Overwrite;
                 var channelId = pendingOverride.ChannelId;
 
@@ -175,6 +183,14 @@ namespace Cliptok.Events
                     return;
                 }
 
+                var data = overridesPendingAddition.GetValueOrDefault(e.Message.Id);
+                if (data.requestingUserId != e.Interaction.User.Id)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} Only the person who used that command can respond!").AsEphemeral(true));
+                    return;
+                }
+
                 await e.Message.ModifyAsync(new DiscordMessageBuilder().WithContent($"{Program.cfgjson.Emoji.Error} Cancelled! Nothing was changed."));
                 overridesPendingAddition.Remove(e.Message.Id);
             }
@@ -199,7 +215,15 @@ namespace Cliptok.Events
                 }
 
                 // Get new override data
-                var pendingOverride = overridesPendingAddition.GetValueOrDefault(e.Message.Id);
+                var data = overridesPendingAddition.GetValueOrDefault(e.Message.Id);
+                if (data.requestingUserId != e.Interaction.User.Id)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} Only the person who used that command can respond!").AsEphemeral(true));
+                    return;
+                }
+
+                var pendingOverride = data.pendingOverride;
                 var mockOverwrite = pendingOverride.Overwrite;
                 var channelId = pendingOverride.ChannelId;
                 var newOverwrite = JsonConvert.DeserializeObject<DiscordOverwrite>(JsonConvert.SerializeObject(mockOverwrite));
@@ -239,6 +263,14 @@ namespace Cliptok.Events
             else if (e.Id == "insiders-info-roles-menu-callback")
             {
                 // Shows a menu in #insider-info that allows a user to toggle their Insider roles
+
+                if (Program.cfgjson.InsiderRoles.Count == 0)
+                {
+                    await e.Interaction.CreateResponseAsync(DiscordInteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} Insider roles are not configured! Please contact a bot maintainer.")
+                        .AsEphemeral(true));
+                    return;
+                }
 
                 // Defer interaction
                 await e.Interaction.DeferAsync(ephemeral: true);
@@ -324,7 +356,18 @@ namespace Cliptok.Events
                 var member = await e.Guild.CheckAndGetMemberAsync(e.User.Id);
 
                 // Get insider chat role
-                var insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.InsiderChatRole);
+                DiscordRole insiderChatRole;
+                try
+                {
+                    insiderChatRole = await e.Guild.GetRoleAsync(cfgjson.InsiderChatRole);
+                }
+                catch (DSharpPlus.Exceptions.NotFoundException)
+                {
+                    await e.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
+                        .WithContent($"{Program.cfgjson.Emoji.Error} The Insider chat role is not set up! Please contact a bot maintainer."));
+                    return;
+                }
+
 
                 // Check whether member already has any insider roles
                 if (Program.cfgjson.InsiderRoles is not null && member.Roles.Any(x => Program.cfgjson.InsiderRoles.Contains(x.Id)))
@@ -634,29 +677,5 @@ namespace Cliptok.Events
                 Program.discord.Logger.LogError(Program.CliptokEventID, "Received unexpected modal submission with ID {id}!", e.Id);
             }
         }
-
-        public static async Task SlashCommandErrored(CommandErroredEventArgs e)
-        {
-            if (e.Exception is ChecksFailedException slex)
-            {
-                foreach (var check in slex.Errors)
-                    if (check.ContextCheckAttribute is RequireHomeserverPermAttribute att && e.Context.Command.Name != "edit")
-                    {
-                        var level = (await GetPermLevelAsync(e.Context.Member));
-                        var levelText = level.ToString();
-                        if (level == ServerPermLevel.Nothing && rand.Next(1, 100) == 69)
-                            levelText = $"naught but a thing, my dear human. Congratulations, you win {rand.Next(1, 10)} bonus points.";
-
-                        await e.Context.RespondAsync(new DiscordInteractionResponseBuilder().WithContent(
-                                $"{cfgjson.Emoji.NoPermissions} Invalid permission level to use command **{e.Context.Command.Name}**!\n" +
-                                $"Required: `{att.TargetLvl}`\n" +
-                                $"You have: `{levelText}`")
-                                .AsEphemeral(true)
-                            );
-                    }
-            }
-            e.Context.Client.Logger.LogError(CliptokEventID, e.Exception, "Error during invocation of interaction command {command} by user {user}", e.Context.Command.Name, e.Context.User.Id);
-        }
-
     }
 }

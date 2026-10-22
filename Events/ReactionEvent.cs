@@ -40,13 +40,21 @@ namespace Cliptok.Events
                     await targetMessage.DeleteReactionAsync(e.Emoji, e.User);
                 }
             }
+                        
+            if (e.Emoji.ToString() == "❌")
+            {
+                var quoteOwner = redis.HashGet("quoteOwners", e.Message.Id);
+
+                if (quoteOwner.Equals(e.User.Id))
+                    await e.Message.DeleteAsync();
+            }
 
             // Reaction to undo warnings in log channels
 
             if (e.User.Id == discord.CurrentUser.Id)
                 return;
 
-            if (e.Channel.Id != cfgjson.LogChannels["investigations"].ChannelId && e.Channel.Id != cfgjson.LogChannels["mod"].ChannelId)
+            if (e.Channel.Id != LogChannelHelper.GetLogChannelId("investigations") && e.Channel.Id != LogChannelHelper.GetLogChannelId("mod"))
                 return;
 
             if (cfgjson.ReactionEmoji is null)
@@ -188,6 +196,7 @@ namespace Cliptok.Events
                     }
                 }
             }
+
         }
     }
 }
